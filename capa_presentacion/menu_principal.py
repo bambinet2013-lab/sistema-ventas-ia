@@ -22,6 +22,7 @@ from capa_datos.lote_repo import LoteRepositorio
 from capa_datos.rol_repo import RolRepositorio
 from capa_datos.usuario_admin_repo import UsuarioAdminRepositorio
 from capa_datos.proveedor_archivo_repo import ProveedorArchivoRepositorio
+from capa_datos.aprendizaje_repo import AprendizajeRepositorio
 
 from capa_negocio.categoria_service import CategoriaService
 from capa_negocio.cliente_service import ClienteService
@@ -5091,96 +5092,99 @@ class SistemaVentas:
                     print(f"{self.COLOR_ROJO}   ❌ Nombre obligatorio{self.COLOR_RESET}")
                     continue
                 
-                # ===== DETECCIÓN DE CATEGORÍA CON IA =====
+                # ===== DETECCIÓN DE CATEGORÍA CON IA (UNIFICADA) =====
+                from capa_datos.conexion import ConexionDB
+                from capa_datos.aprendizaje_repo import AprendizajeRepositorio
                 from capa_negocio.ia_productos_service import IAProductosService
-                ia_service = IAProductosService()
+                
+                # Inicializar repositorio de aprendizaje
+                db_aprendizaje = ConexionDB()
+                conn_aprendizaje = db_aprendizaje.conectar()
+                repo_aprendizaje = AprendizajeRepositorio(conn_aprendizaje)
+                
+                # Crear IA con aprendizaje
+                ia_service = IAProductosService(repo_aprendizaje=repo_aprendizaje)
+                
+                # Analizar producto
                 resultado_ia = ia_service.analizar_producto(nombre)
                 
-                # Variables para categoría
-                idcategoria = 2  # Valor por defecto
-                categoria_nombre = 'Víveres'
+                # Variables para categoría e impuesto
+                idcategoria_sugerida = None
+                id_impuesto_sugerido = None
+                categoria_sugerida_nombre = 'Víveres'
                 es_moto = False
                 
-                if resultado_ia and resultado_ia.get('tipo') == 'MOTOS':
-                    # ===== PRODUCTO DE MOTOS =====
-                    es_moto = True
-                    idcategoria = resultado_ia['idcategoria']
-                    categoria_nombre = resultado_ia['nombre_categoria']
+                if resultado_ia:
+                    idcategoria_sugerida = resultado_ia.get('idcategoria')
+                    id_impuesto_sugerido = resultado_ia.get('id_impuesto')
                     
-                    print(f"\n   {self.COLOR_VERDE}🏍️ Producto de MOTOS detectado:{self.COLOR_RESET}")
-                    print(f"   Categoría: {categoria_nombre} (ID: {idcategoria})")
-                    print(f"   Impuesto: General (G) - 16%")
-                    
-                    # Mostrar categorías de motos disponibles
-                    categorias_motos = {
-                        101: 'Motor', 102: 'Transmisión', 103: 'Frenos',
-                        104: 'Suspensión', 105: 'Eléctrico', 106: 'Lubricantes',
-                        107: 'Filtros', 108: 'Cauchos', 109: 'Accesorios',
-                        110: 'Herramientas', 111: 'Servicios'
-                    }
-                    
-                    print(f"\n   {self.COLOR_VERDE}Categorías de motos:{self.COLOR_RESET}")
-                    for cat_id, cat_nom in categorias_motos.items():
-                        marca = "👉" if cat_id == idcategoria else "  "
-                        print(f"   {marca} [{cat_id}] {cat_nom}")
-                    
-                    opcion = input(f"\n   Presione Enter para aceptar [{categoria_nombre}], o ingrese otro número: ").strip()
-                    if opcion:
-                        try:
-                            idcategoria = int(opcion)
-                            if idcategoria in categorias_motos:
-                                categoria_nombre = categorias_motos[idcategoria]
-                            else:
-                                print(f"   {self.COLOR_AMARILLO}⚠️ Categoría no válida, usando detectada{self.COLOR_RESET}")
-                        except:
-                            pass  # Usar la detectada
-                    
-                else:
-                    # ===== PRODUCTO DE SUPERMERCADO =====
-                    print(f"\n   {self.COLOR_VERDE}🛒 Producto de SUPERMERCADO detectado{self.COLOR_RESET}")
-                    
-                    # 👇 CATEGORÍAS DE SUPERMERCADO
-                    categorias_super = {
-                        1: 'Electrónicos',
-                        2: 'Víveres',
-                        3: 'Bebidas',
-                        4: 'Lácteos',
-                        5: 'Otros',
-                        7: 'Perecederos',
-                        8: 'Limpieza',
-                        9: 'Higiene'
-                    }
-                    
-                    # Determinar categoría sugerida por la IA
-                    categoria_sugerida = 2  # Víveres por defecto
-                    if resultado_ia and 'idcategoria' in resultado_ia:
-                        categoria_sugerida = resultado_ia['idcategoria']
-                        categoria_sugerida_nombre = categorias_super.get(categoria_sugerida, 'Víveres')
-                        print(f"\n   {self.COLOR_VERDE}🤖 IA sugiere: {categoria_sugerida_nombre} (ID: {categoria_sugerida}){self.COLOR_RESET}")
-                    
-                    print(f"\n   {self.COLOR_VERDE}Categorías disponibles:{self.COLOR_RESET}")
-                    for cat_id, cat_nom in categorias_super.items():
-                        marca = "👉" if cat_id == categoria_sugerida else "  "
-                        print(f"   {marca} [{cat_id}] {cat_nom}")
-                    
-                    opcion = input(f"\n   Presione Enter para aceptar [{categoria_sugerida_nombre}], o ingrese otro número: ").strip()
-                    
-                    if opcion:
-                        try:
-                            idcategoria = int(opcion)
-                            if idcategoria in categorias_super:
-                                categoria_nombre = categorias_super[idcategoria]
-                            else:
-                                print(f"   {self.COLOR_AMARILLO}⚠️ Categoría no válida, usando sugerida{self.COLOR_RESET}")
-                                idcategoria = categoria_sugerida
-                                categoria_nombre = categorias_super.get(categoria_sugerida, 'Víveres')
-                        except:
-                            idcategoria = categoria_sugerida
-                            categoria_nombre = categorias_super.get(categoria_sugerida, 'Víveres')
+                    if resultado_ia.get('tipo') == 'MOTOS':
+                        es_moto = True
+                        print(f"\n   {self.COLOR_VERDE}🏍️ Producto de MOTOS detectado:{self.COLOR_RESET}")
                     else:
-                        idcategoria = categoria_sugerida
-                        categoria_nombre = categorias_super.get(categoria_sugerida, 'Víveres')
+                        print(f"\n   {self.COLOR_VERDE}🛒 Producto de SUPERMERCADO detectado:{self.COLOR_RESET}")
+                    
+                    if idcategoria_sugerida:
+                        # Obtener nombre de categoría de un diccionario combinado
+                        categorias_totales = {
+                            1: 'Electrónicos', 2: 'Víveres', 3: 'Bebidas',
+                            4: 'Lácteos', 5: 'Otros', 7: 'Perecederos',
+                            8: 'Limpieza', 9: 'Higiene',
+                            101: 'Motor', 102: 'Transmisión', 103: 'Frenos',
+                            104: 'Suspensión', 105: 'Eléctrico', 106: 'Lubricantes',
+                            107: 'Filtros', 108: 'Cauchos', 109: 'Accesorios',
+                            110: 'Herramientas', 111: 'Servicios'
+                        }
+                        categoria_sugerida_nombre = categorias_totales.get(idcategoria_sugerida, 'Víveres')
+                        print(f"\n   {self.COLOR_VERDE}🤖 IA sugiere: {categoria_sugerida_nombre} (ID: {idcategoria_sugerida}){self.COLOR_RESET}")
+                        if id_impuesto_sugerido:
+                            letras = {1: 'E', 2: 'G', 3: 'R', 4: 'A'}
+                            print(f"   💰 Impuesto sugerido: {letras.get(id_impuesto_sugerido, 'G')}")
                 
+                # Mostrar categorías disponibles
+                print(f"\n   {self.COLOR_VERDE}Categorías de supermercado:{self.COLOR_RESET}")
+                for cat_id in [1,2,3,4,5,7,8,9]:
+                    cat_nom = categorias_totales[cat_id]
+                    marca = "👉" if cat_id == idcategoria_sugerida else "  "
+                    print(f"   {marca} [{cat_id}] {cat_nom}")
+                
+                print(f"\n   {self.COLOR_AMARILLO}🏍️ Categorías de motos:{self.COLOR_RESET}")
+                for cat_id in [101,102,103,104,105,106,107,108,109,110,111]:
+                    cat_nom = categorias_totales[cat_id]
+                    marca = "👉" if cat_id == idcategoria_sugerida else "  "
+                    print(f"   {marca} [{cat_id}] {cat_nom}")
+                
+                # Determinar categoría final
+                default_cat = idcategoria_sugerida if idcategoria_sugerida else 2
+                default_nombre = categorias_totales.get(default_cat, 'Víveres')
+                opcion = input(f"\n   Presione Enter para aceptar [{default_nombre}], o ingrese otro número: ").strip()
+                
+                if opcion:
+                    try:
+                        idcategoria = int(opcion)
+                        if idcategoria in categorias_totales:
+                            categoria_nombre = categorias_totales[idcategoria]
+                            # Si el usuario eligió diferente, registrar aprendizaje
+                            if idcategoria != idcategoria_sugerida:
+                                ia_service.registrar_aprendizaje(
+                                    nombre=nombre,
+                                    idcategoria=idcategoria,
+                                    id_impuesto=id_impuesto_sugerido or 2
+                                )
+                        else:
+                            print(f"   {self.COLOR_AMARILLO}⚠️ Categoría no válida, usando Víveres (2){self.COLOR_RESET}")
+                            idcategoria = 2
+                            categoria_nombre = 'Víveres'
+                    except:
+                        idcategoria = idcategoria_sugerida if idcategoria_sugerida else 2
+                        categoria_nombre = categorias_totales.get(idcategoria, 'Víveres')
+                else:
+                    idcategoria = idcategoria_sugerida if idcategoria_sugerida else 2
+                    categoria_nombre = categorias_totales.get(idcategoria, 'Víveres')
+                
+                # Guardar impuesto para usarlo después
+                id_impuesto = id_impuesto_sugerido or 2
+
                 # ===== CAMPOS ADICIONALES PARA MOTOS =====
                 marca_moto = None
                 modelo_moto = None
@@ -5238,6 +5242,7 @@ class SistemaVentas:
                         'nombre': nombre,
                         'categoria': categoria_nombre,
                         'idcategoria': idcategoria,
+                        'id_impuesto': id_impuesto_sugerido or 2,                   
                         'unidad': unidad,
                         'perecedero': perecedero,
                         'cantidad': cantidad,
@@ -5419,6 +5424,8 @@ class SistemaVentas:
                                 precio_venta=item['precio'],
                                 stock_minimo=5,
                                 precio_compra=item['precio'],
+                                id_impuesto=item.get('id_impuesto', 2),                                
+                                repo_aprendizaje=repo_aprendizaje
                             )
                             
                             if nuevo_id:

@@ -119,7 +119,7 @@ class ArticuloService(BaseService):
     def crear_articulo(self, codigo_barras_original: str, nombre: str, 
                        idcategoria: int = 2, precio_venta: float = 0,
                        stock_minimo: int = 5, precio_compra: float = 0, 
-                       id_impuesto: int = None) -> Optional[int]:
+                       id_impuesto: int = None, repo_aprendizaje=None) -> Optional[int]:
         """
         Crea un nuevo artículo con código profesional automático
         
@@ -206,15 +206,29 @@ class ArticuloService(BaseService):
             
             if idarticulo:
                 logger.info(f"✅ Artículo creado: {nombre} (ID: {idarticulo}, Código: {codigo})")
+                
+                # ===== NUEVO: Registrar aprendizaje por éxito =====
+                if repo_aprendizaje:
+                    palabras = nombre.upper().split()
+                    for palabra in palabras:
+                        if len(palabra) >= 3:
+                            repo_aprendizaje.registrar_uso(
+                                palabra=palabra,
+                                idcategoria=idcategoria,
+                                id_impuesto=id_impuesto or 2
+                            )
+                    logger.info(f"🧠 Aprendizaje registrado desde creación exitosa")
+                # ==================================================
+                
                 self.registrar_auditoria(
                     accion='CREAR',
                     tabla='articulo',
                     registro_id=idarticulo,
                     datos_nuevos=f"Código: {codigo}, Código barras: {codigo_barras_original}, Nombre: {nombre}, Impuesto: {id_impuesto}"
                 )
-                
+
             return idarticulo
-            
+
         except Exception as e:
             logger.error(f"❌ Error creando artículo: {e}")
             return None

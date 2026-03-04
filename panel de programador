@@ -1,0 +1,451 @@
+si pero me gustaria crearlo pero solo para mi como programador como metodo oculto que salga mediante una tecla de atajo para hacer mantenimiento del sistema de venta, eso se podria hacer?
+✅ ¡EXCELENTE IDEA! Un "modo programador" o "modo oculto" con tecla de atajo es totalmente posible y muy útil.
+
+🎯 CÓMO IMPLEMENTAR UN MODO OCULTO PARA PROGRAMADOR
+OPCIÓN 1: Tecla de atajo global (Ctrl+Shift+P) desde cualquier pantalla
+python
+# En tu archivo principal de la interfaz (ej: main.py)
+import keyboard  # pip install keyboard
+from tkinter import messagebox
+import tkinter as tk
+
+class SistemaVentas:
+    def __init__(self):
+        # ... tu código existente ...
+        
+        # Registrar tecla de atajo global
+        keyboard.add_hotkey('ctrl+shift+p', self.abrir_panel_programador)
+    
+    def abrir_panel_programador(self):
+        """Abre panel oculto para programador"""
+        # Verificar contraseña de programador (opcional)
+        password = tk.simpledialog.askstring("Acceso Programador", 
+                                             "Ingrese contraseña:", 
+                                             show='*')
+        if password == "admin123":  # Cambia por tu contraseña
+            PanelProgramador(self.root)
+        else:
+            messagebox.showerror("Error", "Contraseña incorrecta")
+OPCIÓN 2: Botón oculto en algún lugar (triple clic en logo)
+python
+class PanelPrincipal:
+    def __init__(self):
+        # Crear logo con triple clic oculto
+        self.logo = tk.Label(self, text="🏪 SISTEMA DE VENTAS")
+        self.logo.pack()
+        
+        # Contador de clics
+        self.clicks_logo = 0
+        self.logo.bind('<Button-1>', self.clic_logo)
+    
+    def clic_logo(self, event):
+        self.clicks_logo += 1
+        if self.clicks_logo >= 3:
+            self.clicks_logo = 0
+            # Preguntar contraseña y abrir panel
+            self.abrir_panel_programador()
+📁 PANEL DE PROGRAMADOR COMPLETO
+Crea un archivo nuevo: capa_presentacion/panel_programador.py
+
+python
+"""
+Panel oculto para programador - Mantenimiento del sistema
+Solo accesible mediante tecla de atajo o contraseña
+"""
+import tkinter as tk
+from tkinter import ttk, messagebox
+from loguru import logger
+from capa_datos.conexion import ConexionDB
+
+class PanelProgramador:
+    def __init__(self, parent):
+        self.parent = parent
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("👨‍💻 PANEL DE PROGRAMADOR - MANTENIMIENTO")
+        self.ventana.geometry("900x600")
+        self.ventana.configure(bg='#2b2b2b')  # Fondo oscuro para diferenciar
+        
+        # Centrar ventana
+        self.centrar_ventana()
+        
+        # Título con estilo especial
+        tk.Label(self.ventana, text="🔧 MODO PROGRAMADOR - SOLO MANTENIMIENTO", 
+                font=("Arial", 16, "bold"), bg='#2b2b2b', fg='#ff6b6b').pack(pady=10)
+        
+        # Crear pestañas para diferentes funcionalidades
+        self.crear_notebook()
+        
+        # Botón de cerrar
+        tk.Button(self.ventana, text="CERRAR PANEL", command=self.ventana.destroy,
+                 bg='#dc3545', fg='white', font=('Arial', 10, 'bold')).pack(pady=10)
+        
+    def centrar_ventana(self):
+        self.ventana.update_idletasks()
+        ancho = 900
+        alto = 600
+        x = (self.ventana.winfo_screenwidth() // 2) - (ancho // 2)
+        y = (self.ventana.winfo_screenheight() // 2) - (alto // 2)
+        self.ventana.geometry(f'{ancho}x{alto}+{x}+{y}')
+    
+    def crear_notebook(self):
+        notebook = ttk.Notebook(self.ventana)
+        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Pestaña 1: Gestión de Marcas
+        self.pestana_marcas = ttk.Frame(notebook)
+        notebook.add(self.pestana_marcas, text="🏷️ MARCAS")
+        self.crear_pestana_marcas()
+        
+        # Pestaña 2: Ver aprendizaje
+        self.pestana_aprendizaje = ttk.Frame(notebook)
+        notebook.add(self.pestana_aprendizaje, text="🧠 APRENDIZAJE")
+        self.crear_pestana_aprendizaje()
+        
+        # Pestaña 3: SQL Directo
+        self.pestana_sql = ttk.Frame(notebook)
+        notebook.add(self.pestana_sql, text="📝 SQL CONSOLA")
+        self.crear_pestana_sql()
+        
+        # Pestaña 4: Estadísticas
+        self.pestana_stats = ttk.Frame(notebook)
+        notebook.add(self.pestana_stats, text="📊 ESTADÍSTICAS")
+        self.crear_pestana_estadisticas()
+    
+    def crear_pestana_marcas(self):
+        """Gestión CRUD de marcas"""
+        frame = self.pestana_marcas
+        
+        # Formulario para agregar marca
+        form_frame = tk.LabelFrame(frame, text="➕ AGREGAR NUEVA MARCA", padx=10, pady=10)
+        form_frame.pack(fill='x', padx=10, pady=5)
+        
+        tk.Label(form_frame, text="Nombre de la marca:").grid(row=0, column=0, sticky='w', pady=2)
+        self.entry_marca = tk.Entry(form_frame, width=30)
+        self.entry_marca.grid(row=0, column=1, pady=2, padx=5)
+        
+        tk.Label(form_frame, text="ID Categoría:").grid(row=1, column=0, sticky='w', pady=2)
+        self.entry_categoria = tk.Entry(form_frame, width=10)
+        self.entry_categoria.grid(row=1, column=1, sticky='w', pady=2, padx=5)
+        
+        tk.Label(form_frame, text="ID Impuesto (1=Exento, 2=General):").grid(row=2, column=0, sticky='w', pady=2)
+        self.entry_impuesto = tk.Entry(form_frame, width=10)
+        self.entry_impuesto.grid(row=2, column=1, sticky='w', pady=2, padx=5)
+        
+        btn_frame = tk.Frame(form_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        tk.Button(btn_frame, text="💾 GUARDAR MARCA", command=self.guardar_marca,
+                 bg='#28a745', fg='white').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🔄 LIMPIAR", command=self.limpiar_form_marca,
+                 bg='#ffc107').pack(side='left', padx=5)
+        
+        # Tabla de marcas existentes
+        table_frame = tk.LabelFrame(frame, text="📋 MARCAS EXISTENTES", padx=10, pady=10)
+        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Treeview para mostrar marcas
+        columns = ('ID', 'Marca', 'Categoría', 'Impuesto', 'Veces Vista', 'Activa')
+        self.tree_marcas = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+        
+        self.tree_marcas.heading('ID', text='ID')
+        self.tree_marcas.heading('Marca', text='MARCA')
+        self.tree_marcas.heading('Categoría', text='CAT')
+        self.tree_marcas.heading('Impuesto', text='IMP')
+        self.tree_marcas.heading('Veces Vista', text='VISTAS')
+        self.tree_marcas.heading('Activa', text='ACTIVA')
+        
+        self.tree_marcas.column('ID', width=50)
+        self.tree_marcas.column('Marca', width=200)
+        self.tree_marcas.column('Categoría', width=70)
+        self.tree_marcas.column('Impuesto', width=70)
+        self.tree_marcas.column('Veces Vista', width=80)
+        self.tree_marcas.column('Activa', width=60)
+        
+        scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree_marcas.yview)
+        self.tree_marcas.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree_marcas.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Botones de acción
+        action_frame = tk.Frame(table_frame)
+        action_frame.pack(fill='x', pady=5)
+        
+        tk.Button(action_frame, text="🗑️ ELIMINAR MARCA", command=self.eliminar_marca,
+                 bg='#dc3545', fg='white').pack(side='left', padx=5)
+        tk.Button(action_frame, text="🔄 REFRESCAR", command=self.cargar_marcas,
+                 bg='#17a2b8', fg='white').pack(side='left', padx=5)
+        
+        # Cargar marcas al iniciar
+        self.cargar_marcas()
+    
+    def guardar_marca(self):
+        """Guarda una nueva marca en la BD"""
+        marca = self.entry_marca.get().strip().upper()
+        categoria = self.entry_categoria.get().strip()
+        impuesto = self.entry_impuesto.get().strip()
+        
+        if not marca or not categoria or not impuesto:
+            messagebox.showerror("Error", "Todos los campos son obligatorios")
+            return
+        
+        try:
+            conn = ConexionDB().conectar()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO marcas_conocidas (nombre_marca, idcategoria_predeterminada, id_impuesto_predeterminado)
+                VALUES (?, ?, ?)
+            """, (marca, int(categoria), int(impuesto)))
+            
+            conn.commit()
+            conn.close()
+            
+            messagebox.showinfo("Éxito", f"✅ Marca '{marca}' agregada correctamente")
+            self.limpiar_form_marca()
+            self.cargar_marcas()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo guardar: {e}")
+    
+    def limpiar_form_marca(self):
+        self.entry_marca.delete(0, tk.END)
+        self.entry_categoria.delete(0, tk.END)
+        self.entry_impuesto.delete(0, tk.END)
+    
+    def cargar_marcas(self):
+        """Carga las marcas en la tabla"""
+        # Limpiar tabla
+        for row in self.tree_marcas.get_children():
+            self.tree_marcas.delete(row)
+        
+        try:
+            conn = ConexionDB().conectar()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT idmarca, nombre_marca, idcategoria_predeterminada, 
+                       id_impuesto_predeterminado, veces_vista, activa
+                FROM marcas_conocidas
+                ORDER BY nombre_marca
+            """)
+            
+            for row in cursor.fetchall():
+                self.tree_marcas.insert('', 'end', values=row)
+            
+            conn.close()
+            logger.info(f"✅ {len(self.tree_marcas.get_children())} marcas cargadas")
+            
+        except Exception as e:
+            logger.error(f"Error cargando marcas: {e}")
+    
+    def eliminar_marca(self):
+        """Elimina la marca seleccionada"""
+        seleccion = self.tree_marcas.selection()
+        if not seleccion:
+            messagebox.showwarning("Advertencia", "Seleccione una marca")
+            return
+        
+        valores = self.tree_marcas.item(seleccion[0])['values']
+        id_marca = valores[0]
+        nombre_marca = valores[1]
+        
+        if messagebox.askyesno("Confirmar", f"¿Eliminar marca '{nombre_marca}'?"):
+            try:
+                conn = ConexionDB().conectar()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM marcas_conocidas WHERE idmarca = ?", (id_marca,))
+                conn.commit()
+                conn.close()
+                
+                self.cargar_marcas()
+                messagebox.showinfo("Éxito", "Marca eliminada")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo eliminar: {e}")
+    
+    def crear_pestana_aprendizaje(self):
+        """Ver palabras aprendidas por la IA"""
+        frame = self.pestana_aprendizaje
+        
+        # Treeview para aprendizaje
+        columns = ('Palabra', 'Categoría', 'Impuesto', 'Usos', 'Aciertos', 'Confianza')
+        tree = ttk.Treeview(frame, columns=columns, show='headings', height=20)
+        
+        tree.heading('Palabra', text='PALABRA')
+        tree.heading('Categoría', text='CAT')
+        tree.heading('Impuesto', text='IMP')
+        tree.heading('Usos', text='USOS')
+        tree.heading('Aciertos', text='ACIERTOS')
+        tree.heading('Confianza', text='CONFIANZA')
+        
+        tree.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Cargar datos
+        try:
+            conn = ConexionDB().conectar()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT palabra, idcategoria, id_impuesto, veces_usada, 
+                       veces_acertada, CAST(veces_acertada AS FLOAT)/veces_usada as confianza
+                FROM aprendizaje_palabras
+                WHERE activa = 1
+                ORDER BY veces_usada DESC
+            """)
+            
+            for row in cursor.fetchall():
+                confianza = f"{row[5]*100:.1f}%"
+                tree.insert('', 'end', values=(row[0], row[1], row[2], row[3], row[4], confianza))
+            
+            conn.close()
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar aprendizaje: {e}")
+    
+    def crear_pestana_sql(self):
+        """Consola SQL para ejecutar comandos directos"""
+        frame = self.pestana_sql
+        
+        tk.Label(frame, text="⚠️ ¡CUIDADO! SQL DIRECTO - Puede dañar la BD",
+                fg='red', font=('Arial', 10, 'bold')).pack(pady=5)
+        
+        # Área de texto para SQL
+        self.text_sql = tk.Text(frame, height=8, font=('Courier', 10))
+        self.text_sql.pack(fill='x', padx=10, pady=5)
+        self.text_sql.insert('1.0', "-- Escribe tu SQL aquí\nSELECT * FROM marcas_conocidas;")
+        
+        # Botón ejecutar
+        tk.Button(frame, text="⚡ EJECUTAR SQL", command=self.ejecutar_sql,
+                 bg='#dc3545', fg='white', font=('Arial', 10, 'bold')).pack(pady=5)
+        
+        # Área de resultados
+        tk.Label(frame, text="RESULTADOS:").pack(anchor='w', padx=10)
+        self.text_resultados = tk.Text(frame, height=15, font=('Courier', 9))
+        self.text_resultados.pack(fill='both', expand=True, padx=10, pady=5)
+    
+    def ejecutar_sql(self):
+        sql = self.text_sql.get('1.0', tk.END).strip()
+        if not sql:
+            return
+        
+        try:
+            conn = ConexionDB().conectar()
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            
+            if sql.upper().startswith('SELECT'):
+                # Mostrar resultados
+                rows = cursor.fetchall()
+                columns = [column[0] for column in cursor.description]
+                
+                resultado = " | ".join(columns) + "\n"
+                resultado += "-" * 80 + "\n"
+                for row in rows[:20]:  # Limitar a 20 filas
+                    resultado += " | ".join(str(r) for r in row) + "\n"
+                
+                self.text_resultados.delete('1.0', tk.END)
+                self.text_resultados.insert('1.0', resultado)
+            else:
+                conn.commit()
+                self.text_resultados.delete('1.0', tk.END)
+                self.text_resultados.insert('1.0', f"✅ {cursor.rowcount} filas afectadas")
+            
+            conn.close()
+        except Exception as e:
+            self.text_resultados.delete('1.0', tk.END)
+            self.text_resultados.insert('1.0', f"❌ ERROR: {e}")
+    
+    def crear_pestana_estadisticas(self):
+        """Estadísticas del sistema"""
+        frame = self.pestana_stats
+        
+        try:
+            conn = ConexionDB().conectar()
+            cursor = conn.cursor()
+            
+            # Total marcas
+            cursor.execute("SELECT COUNT(*) FROM marcas_conocidas")
+            total_marcas = cursor.fetchone()[0]
+            
+            # Total aprendizaje
+            cursor.execute("SELECT COUNT(*) FROM aprendizaje_palabras WHERE activa = 1")
+            total_aprendizaje = cursor.fetchone()[0]
+            
+            # Total correcciones
+            cursor.execute("SELECT COUNT(*) FROM historial_correcciones")
+            total_correcciones = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            stats_text = f"""
+            📊 ESTADÍSTICAS DEL SISTEMA
+            ============================
+            
+            🏷️ MARCAS REGISTRADAS: {total_marcas}
+            
+            🧠 PALABRAS APRENDIDAS: {total_aprendizaje}
+            
+            📝 CORRECCIONES REALIZADAS: {total_correcciones}
+            
+            ⚙️ VERSIÓN IA: 2.0 (Con búsqueda por similitud, tildes y marcas)
+            """
+            
+            tk.Label(frame, text=stats_text, justify='left', font=('Courier', 11),
+                    bg='white', padx=20, pady=20).pack(expand=True, fill='both', padx=20, pady=20)
+            
+        except Exception as e:
+            tk.Label(frame, text=f"Error cargando estadísticas: {e}").pack()
+
+# Función para integrar en tu sistema principal
+def iniciar_panel_programador(parent):
+    """Función para llamar desde cualquier parte"""
+    # Opcional: pedir contraseña
+    from tkinter import simpledialog
+    password = simpledialog.askstring("Acceso Programador", 
+                                      "Ingrese contraseña:", show='*')
+    if password == "admin123":  # Cambia por tu contraseña
+        PanelProgramador(parent)
+    else:
+        messagebox.showerror("Error", "Contraseña incorrecta")
+🔧 CÓMO INTEGRAR EN TU SISTEMA PRINCIPAL
+En tu archivo principal (ej: main.py o menu_principal.py):
+
+python
+# Al inicio
+import keyboard  # pip install keyboard
+from capa_presentacion.panel_programador import iniciar_panel_programador
+
+class SistemaVentas:
+    def __init__(self):
+        # ... tu código existente ...
+        
+        # Tecla de atajo: Ctrl+Shift+P
+        keyboard.add_hotkey('ctrl+shift+p', self.abrir_panel_programador)
+        
+        # O también Ctrl+Alt+M para marcas
+        keyboard.add_hotkey('ctrl+alt+m', self.abrir_panel_marcas)
+    
+    def abrir_panel_programador(self):
+        iniciar_panel_programador(self.root)  # self.root es tu ventana principal
+    
+    def abrir_panel_marcas(self):
+        """Atajo directo a gestión de marcas"""
+        password = tk.simpledialog.askstring("Marcas", "Contraseña:", show='*')
+        if password == "admin123":
+            from capa_presentacion.panel_programador import PanelProgramador
+            panel = PanelProgramador(self.root)
+            panel.notebook.select(0)  # Ir directo a pestaña de marcas
+📦 INSTALAR DEPENDENCIA
+bash
+pip install keyboard
+🎯 RESUMEN DE FUNCIONALIDADES
+Tecla	Función
+Ctrl+Shift+P	Abre panel completo de programador
+Ctrl+Alt+M	Abre directo a gestión de marcas
+Desde el panel puedes:
+✅ Agregar marcas nuevas
+✅ Ver todas las marcas
+✅ Eliminar marcas
+✅ Ver palabras aprendidas por la IA
+✅ Ejecutar SQL directo (¡con cuidado!)
+✅ Ver estadísticas del sistema
+
+¿Quieres que te ayude a implementar esto en tu sistema? 🚀

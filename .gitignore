@@ -1,36 +1,46 @@
-# Entorno virtual
-venv/
-env/
-ENV/
-
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 .Python
-
-# Distribución
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+venv/
+env/
+ENV/
+.venv
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
 
-# Configuración local
-.env
+# Base de datos
+*.db
+*.sqlite3
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # Logs
 *.log
+logs/
+
+# Backups
+*.backup
+*.bak
+*.old
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Credenciales
+*.env
+.env.*
+!*.env.example
+
+# Proyecto específico
+capa_datos/__pycache__/
+capa_negocio/__pycache__/
+capa_presentacion/__pycache__/
