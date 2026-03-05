@@ -1,0 +1,2212 @@
+=== ESTRUCTURA COMPLETA DE BASE DE DATOS ===
+
+-- TABLAS PRINCIPALES
+
+-- DETALLE DE COLUMNAS POR TABLA
+
+----- Tabla: articulo -----
+
+----- Tabla: categoria -----
+
+----- Tabla: aprendizaje_palabras -----
+
+----- Tabla: marcas_conocidas -----
+
+----- Tabla: familias_palabras -----
+
+----- Tabla: palabras_familia -----
+
+----- Tabla: prefijos_codigo_barras -----
+
+
+=== DATOS DE APRENDIZAJE ACTUALES ===
+
+-- TOP 20 PALABRAS MÁS USADAS
+
+-- MARCAS CONOCIDAS
+
+-- FAMILIAS DE PALABRAS
+
+-- PREFIJOS DE CÓDIGO DE BARRAS
+
+=== ARCHIVOS PYTHON PRINCIPALES ===
+
+----- capa_datos/codigo_barras_repo.py -----
+"""
+Repositorio para análisis de códigos de barras
+Basado en estándares GS1 [citation:6][citation:7]
+"""
+from loguru import logger
+from typing import Optional, Dict
+
+class CodigoBarrasRepositorio:
+    """Repositorio para analizar prefijos de códigos de barras"""
+    
+    def __init__(self, conn=None):
+        """
+        Inicializa el repositorio de códigos de barras
+        """
+        if conn is not None:
+            self.conn = conn
+        else:
+            try:
+                from capa_datos.conexion import ConexionDB
+                self.conn = ConexionDB().conectar()
+                logger.info("✅ Conexión propia creada para CodigoBarrasRepositorio")
+            except Exception as e:
+                logger.error(f"❌ Error creando conexión: {e}")
+                raise
+        
+        logger.info("✅ CodigoBarrasRepositorio inicializado")
+    
+    def analizar_codigo(self, codigo: str) -> Optional[Dict]:
+        """
+        Analiza un código de barras y extrae información del país de origen
+        
+        Args:
+            codigo: Código de barras completo (ej: '7591234567890')
+            
+        Returns:
+            Diccionario con información del país o None si no se reconoce
+        """
+        if not codigo or not isinstance(codigo, str):
+            return None
+        
+        try:
+            # Limpiar código (quitar espacios, guiones)
+            codigo_limpio = ''.join(c for c in codigo if c.isdigit())
+            
+            if len(codigo_limpio) < 3:
+                return None
+            
+            cursor = self.conn.cursor()
+            
+            # Buscar por prefijo (de mayor a menor longitud)
+            # Probamos con prefijos de 3 dígitos primero, luego 2
+            prefijos_a_probar = [
+                codigo_limpio[:3],  # 3 dígitos
+                codigo_limpio[:2]   # 2 dígitos
+            ]
+            
+            for prefijo in prefijos_a_probar:
+                query = """
+                SELECT prefijo, pais, continente, idcategoria_sugerida, id_impuesto_sugerido
+                FROM prefijos_codigo_barras
+                WHERE prefijo = ? AND activo = 1
+                """
+                cursor.execute(query, (prefijo,))
+                row = cursor.fetchone()
+                
+                if row:
+                    resultado = {
+                        'prefijo': row[0],
+                        'pais': row[1],
+                        'continente': row[2],
+                        'idcategoria_sugerida': row[3],
+                        'id_impuesto_sugerido': row[4],
+                        'confianza': 0.85  # Confianza base por código de barras
+                    }
+                    
+                    logger.info(f"🌍 Código {codigo} detectado: País {row[1]} (prefijo {row[0]})")
+                    return resultado
+            
+            logger.debug(f"❓ Prefijo no reconocido para código: {codigo}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error analizando código {codigo}: {e}")
+            return None
+    
+    def sugerir_categoria_por_pais(self, codigo: str, nombre_producto: str) -> Optional[Dict]:
+        """
+        Sugiere categoría basada en país de origen + nombre del producto
+        
+        Args:
+            codigo: Código de barras
+            nombre_producto: Nombre del producto para contexto adicional
+            
+        Returns:
+            Sugerencia de categoría/impuesto o None
+        """
+        info_pais = self.analizar_codigo(codigo)
+        if not info_pais:
+            return None
+        
+        # Si el país tiene categoría sugerida predefinida, usarla
+        if info_pais['idcategoria_sugerida']:
+            return {
+                'idcategoria': info_pais['idcategoria_sugerida'],
+                'id_impuesto': info_pais['id_impuesto_sugerido'] or 2,  # General por defecto
+                'confianza': 0.80,
+                'metodo': 'codigo_barras_pais',
+                'pais': info_pais['pais'],
+                'prefijo': info_pais['prefijo']
+            }
+        
+        # Si no hay categoría predefinida, podemos inferir por tipo de producto + país
+        nombre_upper = nombre_producto.upper()
+        
+        # Reglas simples basadas en país + tipo de producto
+        if info_pais['pais'] == 'Venezuela' and any(p in nombre_upper for p in ['HARINA', 'MAIZ', 'PAN']):
+            return {
+                'idcategoria': 2,  # Víveres
+                'id_impuesto': 1,   # Exento (productos básicos venezolanos)
+                'confianza': 0.75,
+                'metodo': 'codigo_barras_pais_tipo',
+                'pais': info_pais['pais']
+            }
+        
+        if info_pais['pais'] == 'Colombia' and any(p in nombre_upper for p in ['CAFE', 'CAFÉ']):
+            return {
+                'idcategoria': 2,
+                'id_impuesto': 1,
+                'confianza': 0.75,
+                'metodo': 'codigo_barras_pais_tipo',
+                'pais': info_pais['pais']
+            }
+        
+        # Por defecto, productos importados (no venezolanos) tienden a ser generales
+        if info_pais['pais'] != 'Venezuela':
+            return {
+                'idcategoria': None,  # Sin categoría específica
+                'id_impuesto': 2,      # General (importados)
+                'confianza': 0.60,
+                'metodo': 'codigo_barras_importado',
+                'pais': info_pais['pais'],
+                'nota': 'Producto importado - verificar categoría'
+            }
+        
+        return None
+
+    def obtener_estadisticas_paises(self) -> Dict:
+        """Obtiene estadísticas de prefijos por país"""
+        try:
+            cursor = self.conn.cursor()
+            
+            query = """
+            SELECT pais, continente, COUNT(*) as total_prefijos
+            FROM prefijos_codigo_barras
+            WHERE activo = 1
+            GROUP BY pais, continente
+            ORDER BY total_prefijos DESC
+            """
+            
+            cursor.execute(query)
+            columns = [column[0] for column in cursor.description]
+            rows = cursor.fetchall()
+            
+            return {
+                'total_paises': len(rows),
+                'total_prefijos': sum(row[2] for row in rows),
+                'detalle': [dict(zip(columns, row)) for row in rows]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas: {e}")
+            return {}
+
+----- capa_datos/conexion.py -----
+import pyodbc
+import os
+from dotenv import load_dotenv
+from loguru import logger
+
+# Cargar variables de entorno
+load_dotenv()
+
+class ConexionDB:
+    """Singleton para manejar la conexión a SQL Server"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._inicializar()
+        return cls._instance
+    
+    def _inicializar(self):
+        self.server = os.getenv('DB_SERVER', 'localhost,1433')
+        self.database = os.getenv('DB_NAME', 'SistemaVentas')
+        self.username = os.getenv('DB_USER', 'sa')
+        self.password = os.getenv('DB_PASSWORD', 'Santi07.')
+        self.driver = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
+        self.conn = None
+    
+    def conectar(self):
+        """Establece conexión con la base de datos"""
+        try:
+            conn_str = (
+                f"DRIVER={self.driver};"
+                f"SERVER={self.server};"
+                f"DATABASE={self.database};"
+                f"UID={self.username};"
+                f"PWD={self.password};"
+                f"TrustServerCertificate=yes;"
+            )
+            self.conn = pyodbc.connect(conn_str)
+            logger.success("✅ Conexión exitosa a SQL Server")
+            return self.conn
+        except Exception as e:
+            logger.error(f"❌ Error de conexión: {e}")
+            return None
+    
+    def cerrar(self):
+        if self.conn:
+            self.conn.close()
+            logger.info("🔒 Conexión cerrada")
+
+----- capa_datos/familia_repo.py -----
+"""
+Repositorio para gestión de familias de palabras
+"""
+from loguru import logger
+from typing import List, Dict, Optional
+
+class FamiliaRepositorio:
+    """Repositorio para administrar familias de palabras"""
+    
+    def __init__(self, conn=None):
+        """
+        Inicializa el repositorio de familias
+        Si no se proporciona conexión, crea una nueva
+        """
+        if conn is not None:
+            self.conn = conn
+        else:
+            try:
+                from capa_datos.conexion import ConexionDB
+                self.conn = ConexionDB().conectar()
+                logger.info("✅ Conexión propia creada para FamiliaRepositorio")
+            except Exception as e:
+                logger.error(f"❌ Error creando conexión: {e}")
+                raise
+        
+        logger.info("✅ FamiliaRepositorio inicializado")
+    
+    def crear_familia(self, nombre: str, descripcion: str = None) -> Optional[int]:
+        """
+        Crea una nueva familia de palabras
+        
+        Args:
+            nombre: Nombre de la familia (ej: 'LACTEOS')
+            descripcion: Descripción opcional
+            
+        Returns:
+            ID de la familia creada o None si error
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            # Verificar si ya existe
+            cursor.execute("SELECT idfamilia FROM familias_palabras WHERE nombre_familia = ?", (nombre.upper(),))
+            existente = cursor.fetchone()
+            
+            if existente:
+                logger.warning(f"⚠️ La familia '{nombre}' ya existe")
+                return existente[0]
+            
+            # Insertar nueva familia
+            query = """
+            INSERT INTO familias_palabras (nombre_familia, descripcion)
+            OUTPUT INSERTED.idfamilia
+            VALUES (?, ?)
+            """
+            cursor.execute(query, (nombre.upper(), descripcion))
+            idfamilia = cursor.fetchone()[0]
+            
+            self.conn.commit()
+            logger.info(f"✅ Familia '{nombre}' creada con ID {idfamilia}")
+            return idfamilia
+            
+        except Exception as e:
+            logger.error(f"❌ Error creando familia: {e}")
+            self.conn.rollback()
+            return None
+    
+    def asignar_palabra_a_familia(self, idpalabra: int, idfamilia: int) -> bool:
+        """
+        Asigna una palabra aprendida a una familia
+        
+        Args:
+            idpalabra: ID de la palabra en aprendizaje_palabras
+            idfamilia: ID de la familia
+            
+        Returns:
+            True si se asignó correctamente
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            query = """
+            INSERT INTO palabras_familia (idpalabra, idfamilia)
+            VALUES (?, ?)
+            """
+            cursor.execute(query, (idpalabra, idfamilia))
+            
+            self.conn.commit()
+            logger.info(f"✅ Palabra {idpalabra} asignada a familia {idfamilia}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error asignando palabra a familia: {e}")
+            self.conn.rollback()
+            return False
+    
+    def obtener_familia_de_palabra(self, palabra: str) -> Optional[Dict]:
+        """
+        Obtiene la familia de una palabra específica
+        
+        Args:
+            palabra: La palabra a buscar
+            
+        Returns:
+            Diccionario con info de la familia o None
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            query = """
+            SELECT f.idfamilia, f.nombre_familia, f.descripcion,
+                   ap.idpalabra, ap.palabra, ap.idcategoria, ap.id_impuesto
+            FROM aprendizaje_palabras ap
+            INNER JOIN palabras_familia pf ON ap.idpalabra = pf.idpalabra
+            INNER JOIN familias_palabras f ON pf.idfamilia = f.idfamilia
+            WHERE ap.palabra = ? AND ap.activa = 1
+            """
+            cursor.execute(query, (palabra,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'idfamilia': row[0],
+                    'nombre_familia': row[1],
+                    'descripcion': row[2],
+                    'idpalabra': row[3],
+                    'palabra': row[4],
+                    'idcategoria': row[5],
+                    'id_impuesto': row[6]
+                }
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo familia de '{palabra}': {e}")
+            return None
+    
+    def buscar_por_familia(self, texto: str, limite: int = 5) -> List[Dict]:
+        """
+        Busca palabras que pertenezcan a la misma familia que palabras similares al texto
+        
+        Args:
+            texto: Texto a buscar
+            limite: Máximo de resultados
+            
+        Returns:
+            Lista de palabras de la familia
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            # Primero buscar palabras similares al texto
+            palabras = texto.upper().split()
+            resultados = []
+            familias_vistas = set()
+            
+            for palabra in palabras:
+                if len(palabra) < 3:
+                    continue
+                
+                # Buscar familias de palabras similares
+                query = """
+                SELECT DISTINCT f.idfamilia, f.nombre_familia, 
+                       ap.idpalabra, ap.palabra, ap.idcategoria, ap.id_impuesto,
+                       ap.veces_usada, ap.peso
+                FROM aprendizaje_palabras ap
+                INNER JOIN palabras_familia pf ON ap.idpalabra = pf.idpalabra
+                INNER JOIN familias_palabras f ON pf.idfamilia = f.idfamilia
+                WHERE ? LIKE '%' + ap.palabra + '%' 
+                  AND ap.activa = 1
+                  AND f.activa = 1
+                ORDER BY ap.peso DESC, ap.veces_usada DESC
+                """
+                cursor.execute(query, (texto,))
+                
+                for row in cursor.fetchall():
+                    idfamilia = row[0]
+                    if idfamilia not in familias_vistas:
+                        familias_vistas.add(idfamilia)
+                        resultados.append({
+                            'idfamilia': idfamilia,
+                            'nombre_familia': row[1],
+                            'idpalabra': row[2],
+                            'palabra': row[3],
+                            'idcategoria': row[4],
+                            'id_impuesto': row[5],
+                            'veces_usada': row[6],
+                            'peso': row[7] if row[7] else 1.0,
+                            'metodo': 'familia'
+                        })
+            
+            # Si encontramos familias, buscar más palabras de esas familias
+            if resultados:
+                familias_ids = [r['idfamilia'] for r in resultados]
+                placeholders = ','.join('?' * len(familias_ids))
+                
+                query = f"""
+                SELECT ap.idpalabra, ap.palabra, ap.idcategoria, 
+                       ap.id_impuesto, ap.veces_usada, ap.peso,
+                       f.nombre_familia
+                FROM aprendizaje_palabras ap
+                INNER JOIN palabras_familia pf ON ap.idpalabra = pf.idpalabra
+                INNER JOIN familias_palabras f ON pf.idfamilia = f.idfamilia
+                WHERE pf.idfamilia IN ({placeholders})
+                  AND ap.activa = 1
+                ORDER BY ap.peso DESC, ap.veces_usada DESC
+                """
+                cursor.execute(query, familias_ids)
+                
+                palabras_familia = []
+                palabras_vistas = set()
+                for row in cursor.fetchall():
+                    if row[1] not in palabras_vistas:
+                        palabras_vistas.add(row[1])
+                        palabras_familia.append({
+                            'idpalabra': row[0],
+                            'palabra': row[1],
+                            'idcategoria': row[2],
+                            'id_impuesto': row[3],
+                            'veces_usada': row[4],
+                            'peso': row[5] if row[5] else 1.0,
+                            'familia': row[6],
+                            'metodo': 'familia_extendida'
+                        })
+                
+                logger.info(f"🔍 Búsqueda por familia: {len(palabras_familia)} resultados")
+                return palabras_familia[:limite]
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda por familia: {e}")
+            return []
+    
+    def obtener_todas_familias(self) -> List[Dict]:
+        """Obtiene todas las familias con estadísticas"""
+        try:
+            cursor = self.conn.cursor()
+            
+            query = """
+            SELECT f.idfamilia, f.nombre_familia, f.descripcion,
+                   COUNT(DISTINCT pf.idpalabra) as total_palabras,
+                   SUM(ap.veces_usada) as usos_totales,
+                   AVG(ap.peso) as peso_promedio
+            FROM familias_palabras f
+            LEFT JOIN palabras_familia pf ON f.idfamilia = pf.idfamilia
+            LEFT JOIN aprendizaje_palabras ap ON pf.idpalabra = ap.idpalabra
+            WHERE f.activa = 1
+            GROUP BY f.idfamilia, f.nombre_familia, f.descripcion
+            ORDER BY f.nombre_familia
+            """
+            
+            cursor.execute(query)
+            columns = [column[0] for column in cursor.description]
+            rows = cursor.fetchall()
+            
+            return [dict(zip(columns, row)) for row in rows]
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo familias: {e}")
+            return []
+
+----- capa_datos/aprendizaje_repo.py -----
+"""
+Repositorio para gestión del aprendizaje de la IA
+"""
+from loguru import logger
+from typing import List, Dict, Optional
+
+class AprendizajeRepositorio:
+    def __init__(self, conn=None):
+        """
+        Inicializa el repositorio de aprendizaje
+        Si no se proporciona conexión, crea una nueva usando conexion.py
+
+        Args:
+            conn: Conexión a BD (opcional). Si no se provee, se crea una.
+        """
+        if conn is not None:
+            self.conn = conn
+            logger.debug("📦 Usando conexión proporcionada para aprendizaje")
+        else:
+            try:
+                from capa_datos.conexion import ConexionDB  # ← CAMBIO 1
+                self.conn = ConexionDB().conectar()        # ← CAMBIO 2
+                logger.info("✅ Conexión propia creada para aprendizaje usando ConexionDB")
+            except Exception as e:
+                logger.error(f"❌ Error creando conexión para aprendizaje: {e}")
+                raise
+
+        logger.info("✅ AprendizajeRepositorio inicializado")
+    
+    def registrar_uso(self, palabra: str, idcategoria: int, id_impuesto: int) -> bool:
+        """
+        Registra o actualiza una palabra aprendida con ponderación por frecuencia
+
+        Si la palabra ya existe, incrementa sus contadores y ajusta su peso.
+        Si es nueva, la inserta con peso inicial.
+        """
+        try:
+            cursor = self.conn.cursor()
+
+            # Verificar si la palabra ya existe
+            cursor.execute("""
+                SELECT idpalabra, veces_usada, veces_acertada, peso 
+                FROM aprendizaje_palabras 
+                WHERE palabra = ?
+            """, (palabra,))
+
+            existente = cursor.fetchone()
+
+            if existente:
+                # Calcular nuevo peso basado en frecuencia
+                veces_actuales = existente[1]  # veces_usada
+                peso_actual = existente[3] if existente[3] else 1.0
+                
+                # Fórmula de peso: base 1.0 + 0.1 por cada uso (máximo 5.0)
+                nuevo_peso = min(1.0 + ((veces_actuales + 1) * 0.1), 5.0)
+                
+                # Actualizar palabra existente
+                query = """
+                UPDATE aprendizaje_palabras 
+                SET veces_usada = veces_usada + 1,
+                    veces_acertada = veces_acertada + 1,
+                    ultima_vez = GETDATE(),
+                    peso = ?
+                WHERE palabra = ?
+                """
+                cursor.execute(query, (nuevo_peso, palabra))
+                logger.debug(f"📈 Palabra actualizada: '{palabra}' (peso: {peso_actual:.2f} → {nuevo_peso:.2f})")
+            else:
+                # Insertar nueva palabra con peso inicial
+                peso_inicial = 1.0
+                query = """
+                INSERT INTO aprendizaje_palabras 
+                (palabra, idcategoria, id_impuesto, veces_usada, veces_acertada, peso)
+                VALUES (?, ?, ?, 1, 1, ?)
+                """
+                cursor.execute(query, (palabra, idcategoria, id_impuesto, peso_inicial))
+                logger.info(f"✨ Nueva palabra aprendida: '{palabra}' → Cat:{idcategoria}, Imp:{id_impuesto} (peso: {peso_inicial})")
+
+            self.conn.commit()
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error registrando aprendizaje: {e}")
+            self.conn.rollback()
+            return False
+    
+    def registrar_correccion(self, nombre_producto: str, 
+                             idcategoria_sugerida: Optional[int], 
+                             id_impuesto_sugerido: Optional[int],
+                             idcategoria_asignada: int, 
+                             id_impuesto_asignado: int,
+                             usuario_id: Optional[int] = None) -> bool:
+        """
+        Guarda en el historial cuando un usuario corrige a la IA
+        """
+        try:
+            cursor = self.conn.cursor()
+            query = """
+            INSERT INTO historial_correcciones 
+            (producto_nombre, idcategoria_sugerida, id_impuesto_sugerido,
+             idcategoria_asignada, id_impuesto_asignado, usuario_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+            cursor.execute(query, (
+                nombre_producto, 
+                idcategoria_sugerida, 
+                id_impuesto_sugerido,
+                idcategoria_asignada, 
+                id_impuesto_asignado, 
+                usuario_id
+            ))
+            self.conn.commit()
+            logger.info(f"📝 Corrección registrada para '{nombre_producto}'")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error registrando corrección: {e}")
+            self.conn.rollback()
+            return False
+    
+    def buscar_por_palabra(self, palabra: str) -> Optional[Dict]:
+        """
+        Busca una palabra específica en el aprendizaje
+        """
+        try:
+            cursor = self.conn.cursor()
+            query = """
+            SELECT palabra, idcategoria, id_impuesto, veces_usada, 
+                   veces_acertada, CAST(veces_acertada AS FLOAT)/veces_usada as confianza
+            FROM aprendizaje_palabras
+            WHERE palabra = ? AND activa = 1
+            """
+            cursor.execute(query, (palabra,))
+            row = cursor.fetchone()
+            
+            if row:
+                columns = [column[0] for column in cursor.description]
+                return dict(zip(columns, row))
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error buscando palabra '{palabra}': {e}")
+            return None
+    
+    def buscar_palabras_similares(self, texto: str, limite: int = 5) -> List[Dict]:
+        """
+        Busca palabras que contengan el texto (búsqueda parcial)
+        """
+        try:
+            cursor = self.conn.cursor()
+            query = """
+            SELECT palabra, idcategoria, id_impuesto, veces_usada,
+                   CAST(veces_acertada AS FLOAT)/veces_usada as confianza
+            FROM aprendizaje_palabras
+            WHERE ? LIKE '%' + palabra + '%' AND activa = 1
+            ORDER BY veces_usada DESC, confianza DESC
+            """
+            cursor.execute(query, (texto,))
+            
+            columns = [column[0] for column in cursor.description]
+            rows = cursor.fetchall()
+            return [dict(zip(columns, row)) for row in rows][:limite]
+            
+        except Exception as e:
+            logger.error(f"Error buscando palabras similares a '{texto}': {e}")
+            return []
+    
+    def obtener_estadisticas(self) -> Dict:
+        """
+        Obtiene estadísticas de aprendizaje
+        """
+        try:
+            cursor = self.conn.cursor()
+            stats = {}
+            
+            # Total de palabras aprendidas
+            cursor.execute("SELECT COUNT(*) FROM aprendizaje_palabras WHERE activa = 1")
+            stats['total_palabras'] = cursor.fetchone()[0]
+            
+            # Total de correcciones
+            cursor.execute("SELECT COUNT(*) FROM historial_correcciones")
+            stats['total_correcciones'] = cursor.fetchone()[0]
+            
+            # Promedio de confianza
+            cursor.execute("""
+                SELECT AVG(CAST(veces_acertada AS FLOAT)/veces_usada) 
+                FROM aprendizaje_palabras 
+                WHERE activa = 1
+            """)
+            stats['confianza_promedio'] = cursor.fetchone()[0] or 0
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas: {e}")
+            return {}
+
+    def buscar_similares(self, texto: str, limite: int = 3) -> List[Dict]:
+        """
+        Busca palabras similares usando LIKE en lugar de igualdad exacta
+        
+        Args:
+            texto: Texto completo del producto (ej: "PASTILLAS DE FRENO")
+            limite: Número máximo de resultados a devolver
+            
+        Returns:
+            List[Dict]: Lista de coincidencias con relevancia
+        """
+        try:
+            cursor = self.conn.cursor()
+            # Dividir el texto en palabras individuales
+            palabras = texto.upper().split()
+            resultados = []
+            palabras_vistas = set()
+            
+            for palabra in palabras:
+                if len(palabra) < 3:  # Ignorar palabras muy cortas
+                    continue
+                
+                # Buscar palabras que CONTENGAN la palabra actual
+                query = """
+                SELECT palabra, idcategoria, id_impuesto, veces_usada,
+                       CAST(veces_acertada AS FLOAT)/veces_usada as confianza,
+                       peso
+                FROM aprendizaje_palabras
+                WHERE ? LIKE '%' + palabra + '%' AND activa = 1
+                ORDER BY peso DESC, veces_usada DESC
+                """
+                cursor.execute(query, (texto,))
+                
+                for row in cursor.fetchall():
+                    palabra_encontrada = row[0]
+                    if palabra_encontrada not in palabras_vistas:
+                        palabras_vistas.add(palabra_encontrada)
+                        resultados.append({
+                            'palabra': palabra_encontrada,
+                            'idcategoria': row[1],
+                            'id_impuesto': row[2],
+                            'veces_usada': row[3],
+                            'confianza': row[4],
+                            'peso': row[5],
+                            'relevancia': len(palabra_encontrada)  # Palabras más largas = más relevantes
+                        })
+            
+            # Ordenar por relevancia y peso
+            resultados.sort(key=lambda x: (-x['relevancia'], -x['peso'], -x['veces_usada']))
+            
+            logger.info(f"🔍 Búsqueda por similitud: {len(resultados)} resultados para '{texto}'")
+            return resultados[:limite]
+            
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda por similitud: {e}")
+            return []
+
+    # ===== NUEVO MÉTODO UNIFICADO =====
+    def buscar_por_similitud(self, texto: str, limite: int = 5) -> List[Dict]:
+        """
+        [MÉTODO PRINCIPAL UNIFICADO]
+        Busca palabras similares usando LIKE con ponderación por peso
+        
+        Args:
+            texto: Texto completo del producto
+            limite: Número máximo de resultados
+            
+        Returns:
+            List[Dict]: Lista de coincidencias con relevancia
+        """
+        try:
+            cursor = self.conn.cursor()
+            # Dividir el texto en palabras individuales
+            palabras = texto.upper().split()
+            resultados = []
+            palabras_vistas = set()
+            
+            for palabra in palabras:
+                if len(palabra) < 3:  # Ignorar palabras muy cortas
+                    continue
+                
+                # Buscar palabras que CONTENGAN la palabra actual
+                query = """
+                SELECT palabra, idcategoria, id_impuesto, veces_usada,
+                       CAST(veces_acertada AS FLOAT)/veces_usada as confianza,
+                       peso,
+                       LEN(palabra) as longitud
+                FROM aprendizaje_palabras
+                WHERE ? LIKE '%' + palabra + '%' AND activa = 1
+                ORDER BY peso DESC, veces_usada DESC, confianza DESC
+                """
+                cursor.execute(query, (texto,))
+                
+                for row in cursor.fetchall():
+                    palabra_encontrada = row[0]
+                    if palabra_encontrada not in palabras_vistas:
+                        palabras_vistas.add(palabra_encontrada)
+                        resultados.append({
+                            'palabra': palabra_encontrada,
+                            'idcategoria': row[1],
+                            'id_impuesto': row[2],
+                            'veces_usada': row[3],
+                            'confianza': row[4],
+                            'peso': row[5] if row[5] else 1.0,
+                            'relevancia': row[6]  # Longitud de la palabra
+                        })
+            
+            # Ordenar por peso, relevancia y frecuencia
+            resultados.sort(key=lambda x: (-x['peso'], -x['relevancia'], -x['veces_usada']))
+            
+            logger.info(f"🔍 Búsqueda por similitud: {len(resultados)} resultados para '{texto}'")
+            return resultados[:limite]
+            
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda por similitud: {e}")
+            return []
+    
+    # ===== MÉTODOS DE COMPATIBILIDAD =====
+    def buscar_similares(self, texto: str, limite: int = 3) -> List[Dict]:
+        """
+        [COMPATIBILIDAD] Llama al método unificado con límite por defecto 3
+        Mantenido para no romper código existente
+        """
+        logger.debug("🔄 buscar_similares usando método unificado buscar_por_similitud")
+        return self.buscar_por_similitud(texto, limite)
+    
+    def buscar_palabras_similares(self, texto: str, limite: int = 5) -> List[Dict]:
+        """
+        [COMPATIBILIDAD] Llama al método unificado con límite por defecto 5
+        Mantenido para no romper código existente
+        """
+        logger.debug("🔄 buscar_palabras_similares usando método unificado buscar_por_similitud")
+        return self.buscar_por_similitud(texto, limite)
+
+----- capa_negocio/orden_compra_service.py -----
+"""
+Servicio para gestión de órdenes de compra
+"""
+from loguru import logger
+from capa_datos.orden_compra_repo import OrdenCompraRepositorio
+from capa_datos.conexion import ConexionDB
+from capa_negocio.tasa_service import TasaService
+from capa_datos.tasa_repo import TasaRepositorio
+
+class OrdenCompraService:
+    def __init__(self):
+        """Inicializa el servicio de órdenes de compra"""
+        self.db = ConexionDB()
+        self.conn = self.db.conectar()
+        self.repo = OrdenCompraRepositorio()
+        
+        # Inicializar servicio de tasas con su propia conexión
+        try:
+            self.db_tasa = ConexionDB()
+            self.conn_tasa = self.db_tasa.conectar()
+            if self.conn_tasa:
+                tasa_repo = TasaRepositorio(self.conn_tasa)
+                self.tasa_service = TasaService(tasa_repo)
+                logger.info("✅ Servicio de tasas inicializado en OrdenCompraService")
+            else:
+                logger.error("❌ No se pudo conectar para servicio de tasas")
+                self.tasa_service = None
+        except Exception as e:
+            logger.error(f"❌ Error inicializando servicio de tasas: {e}")
+            self.tasa_service = None
+    
+    def registrar_orden(self, codigo_factura, idproveedor, idtrabajador, 
+                        fecha_compra, monto_total_usd, fecha_estimada_llegada=None,
+                        archivo_adjunto=None, estatus='POR_RECIBIR', observaciones=None):
+        """Registra una nueva orden de compra"""
+        try:
+            # Obtener tasa BCV del día
+            tasa_bcv = None
+            monto_total_bs = None
+            
+            if self.tasa_service:
+                tasa_bcv = self.tasa_service.obtener_tasa_del_dia('USD')
+                if tasa_bcv and tasa_bcv > 0:
+                    monto_total_bs = monto_total_usd * tasa_bcv
+                    logger.info(f"💰 Tasa aplicada: {tasa_bcv} Bs/USD - Monto Bs: {monto_total_bs:,.2f}")
+            else:
+                logger.warning("⚠️ Servicio de tasas no disponible")
+            
+            idorden = self.repo.crear(
+                codigo_factura, idproveedor, idtrabajador, fecha_compra,
+                monto_total_usd, monto_total_bs, tasa_bcv,
+                fecha_estimada_llegada, archivo_adjunto, estatus, observaciones
+            )
+            
+            if idorden:
+                logger.info(f"✅ Orden de compra #{idorden} - {codigo_factura} registrada")
+                return idorden
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error registrando orden: {e}")
+            return None
+    
+    def buscar_por_codigo_factura(self, codigo_factura):
+        """Busca orden por código de factura"""
+        try:
+            return self.repo.buscar_por_codigo_factura(codigo_factura)
+        except Exception as e:
+            logger.error(f"❌ Error buscando orden por código: {e}")
+            return None
+    
+    def listar_ordenes_pendientes(self):
+        """Lista órdenes pendientes de recepción"""
+        try:
+            return self.repo.listar_por_estatus('POR_RECIBIR')
+        except Exception as e:
+            logger.error(f"❌ Error listando órdenes pendientes: {e}")
+            return []
+    
+    def listar_todas_ordenes(self):
+        """Lista todas las órdenes"""
+        try:
+            return self.repo.listar_todas()
+        except Exception as e:
+            logger.error(f"❌ Error listando órdenes: {e}")
+            return []
+    
+    def actualizar_estatus(self, idorden, estatus):
+        """Actualiza estatus de la orden"""
+        try:
+            return self.repo.actualizar_estatus(idorden, estatus)
+        except Exception as e:
+            logger.error(f"❌ Error actualizando estatus: {e}")
+            return False
+    
+    def __del__(self):
+        """Cierra conexiones al destruir el objeto"""
+        try:
+            if hasattr(self, 'db'):
+                self.db.cerrar()
+            if hasattr(self, 'db_tasa'):
+                self.db_tasa.cerrar()
+        except:
+            pass
+
+----- capa_negocio/compra_service.py -----
+"""
+Servicio para gestión de compras - VERSIÓN SIMPLIFICADA
+"""
+from loguru import logger
+from capa_datos.compra_repo import CompraRepositorio
+from capa_datos.conexion import ConexionDB
+
+class CompraService:
+    def __init__(self):
+        # Solo usamos el repositorio de compras
+        self.repo = CompraRepositorio()
+    
+    def listar_compras(self):
+        """Lista todas las compras"""
+        try:
+            return self.repo.listar()
+        except Exception as e:
+            logger.error(f"Error listando compras: {e}")
+            return []
+    
+    def buscar_compra(self, idcompra):
+        """Busca una compra por ID"""
+        try:
+            return self.repo.buscar_por_id(idcompra)
+        except Exception as e:
+            logger.error(f"Error buscando compra: {e}")
+            return None
+    
+    def anular_compra(self, idcompra):
+        """Anula una compra"""
+        try:
+            return self.repo.anular(idcompra)
+        except Exception as e:
+            logger.error(f"Error anulando compra: {e}")
+            return False
+
+----- capa_negocio/ia_productos_service.py -----
+"""
+Servicio de Inteligencia Artificial para clasificación automática de productos
+"""
+from loguru import logger
+from typing import Dict, List, Optional, Tuple
+from capa_datos.familia_repo import FamiliaRepositorio
+from capa_datos.codigo_barras_repo import CodigoBarrasRepositorio
+import re
+
+class IAProductosService:
+    def __init__(self, repo_aprendizaje=None, repo_reglas=None, repo_impuestos=None, repo_familia=None, repo_codigo_barras=None):
+        """
+        Inicializa el servicio de IA para productos
+
+        Args:
+            repo_aprendizaje: Repositorio de aprendizaje (opcional)
+            repo_reglas: Repositorio de reglas (opcional)
+            repo_impuestos: Repositorio de impuestos (opcional)
+            repo_familia: Repositorio de familias (opcional)
+            repo_codigo_barras: Repositorio de códigos de barras (opcional)
+        """
+        # ===== Repositorio de aprendizaje =====
+        if repo_aprendizaje is not None:
+            self.repo_aprendizaje = repo_aprendizaje
+            logger.info("✅ Usando repositorio de aprendizaje proporcionado")
+        else:
+            try:
+                from capa_datos.aprendizaje_repo import AprendizajeRepositorio
+                self.repo_aprendizaje = AprendizajeRepositorio()
+                logger.info("✅ Repositorio de aprendizaje creado automáticamente")
+            except Exception as e:
+                logger.error(f"❌ Error creando repositorio de aprendizaje: {e}")
+                self.repo_aprendizaje = None
+        # =====================================
+
+        self.repo_reglas = repo_reglas
+        self.repo_impuestos = repo_impuestos
+
+        # ===== Repositorio de familias =====
+        if repo_familia is not None:
+            self.repo_familia = repo_familia
+            logger.info("✅ Usando repositorio de familias proporcionado")
+        else:
+            try:
+                from capa_datos.familia_repo import FamiliaRepositorio
+                if self.repo_aprendizaje and hasattr(self.repo_aprendizaje, 'conn'):
+                    self.repo_familia = FamiliaRepositorio(self.repo_aprendizaje.conn)
+                else:
+                    self.repo_familia = FamiliaRepositorio()
+                logger.info("✅ Repositorio de familias creado automáticamente")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo crear repositorio de familias: {e}")
+                self.repo_familia = None
+        # =================================
+
+        # ===== Repositorio de códigos de barras =====
+        if repo_codigo_barras is not None:
+            self.repo_codigo_barras = repo_codigo_barras
+            logger.info("✅ Usando repositorio de códigos de barras proporcionado")
+        else:
+            try:
+                from capa_datos.codigo_barras_repo import CodigoBarrasRepositorio
+                if self.repo_aprendizaje and hasattr(self.repo_aprendizaje, 'conn'):
+                    self.repo_codigo_barras = CodigoBarrasRepositorio(self.repo_aprendizaje.conn)
+                else:
+                    self.repo_codigo_barras = CodigoBarrasRepositorio()
+                logger.info("✅ Repositorio de códigos de barras creado automáticamente")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo crear repositorio de códigos de barras: {e}")
+                self.repo_codigo_barras = None
+        # ===========================================
+
+        self.reglas_cargadas = False
+        self.palabras_clave = {}
+        self.marcas_conocidas = {}
+        self.palabras_aprendidas = {}
+
+        self.cargar_reglas_iniciales()
+
+        if self.repo_aprendizaje:
+            self.cargar_aprendizaje()
+        else:
+            logger.warning("⚠️ No se pudo cargar aprendizaje - IA funcionará solo con reglas fijas")
+
+    def detectar_por_codigo_barras(self, codigo: str, nombre: str) -> Optional[Dict]:
+        """
+        Detecta información usando el código de barras como pista
+        
+        Args:
+            codigo: Código de barras del producto
+            nombre: Nombre del producto (para contexto)
+            
+        Returns:
+            Diccionario con sugerencias o None
+        """
+        if not codigo or not hasattr(self, 'repo_codigo_barras') or not self.repo_codigo_barras:
+            return None
+        
+        try:
+            # Analizar código de barras
+            resultado = self.repo_codigo_barras.sugerir_categoria_por_pais(codigo, nombre)
+            
+            if resultado:
+                logger.info(f"📦 Producto detectado por código de barras: {resultado.get('pais', 'desconocido')}")
+                
+                # Si el código de barras sugiere una categoría concreta, usarla
+                if resultado.get('idcategoria'):
+                    return {
+                        'idcategoria': resultado['idcategoria'],
+                        'id_impuesto': resultado['id_impuesto'],
+                        'confianza': resultado['confianza'],
+                        'metodo': resultado['metodo'],
+                        'pais': resultado.get('pais'),
+                        'prefijo': resultado.get('prefijo')
+                    }
+                
+                # Si solo da pista de impuesto (importado), devolver eso
+                if resultado.get('id_impuesto'):
+                    return {
+                        'idcategoria': None,  # Sin categoría definida
+                        'id_impuesto': resultado['id_impuesto'],
+                        'confianza': resultado['confianza'],
+                        'metodo': resultado['metodo'],
+                        'pais': resultado.get('pais'),
+                        'nota': 'Producto importado - requiere verificación de categoría'
+                    }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error en detección por código de barras: {e}")
+            return None
+
+    def detectar_por_familia(self, nombre: str) -> Optional[Dict]:
+        """
+        Detecta productos basándose en familias de palabras
+        """
+        if not nombre or not hasattr(self, 'repo_familia') or not self.repo_familia:
+            return None
+        
+        try:
+            # Buscar por familia
+            resultados = self.repo_familia.buscar_por_familia(nombre, 1)
+            
+            if resultados:
+                r = resultados[0]
+                logger.info(f"👪 Producto detectado por familia: {r['familia']} → '{r['palabra']}'")
+                
+                # Registrar uso para reforzar
+                if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+                    self.repo_aprendizaje.registrar_uso(
+                        palabra=r['palabra'],
+                        idcategoria=r['idcategoria'],
+                        id_impuesto=r['id_impuesto']
+                    )
+                
+                return {
+                    'idcategoria': r['idcategoria'],
+                    'id_impuesto': r['id_impuesto'],
+                    'confianza': 0.92,
+                    'metodo': 'familia_palabras',
+                    'familia': r['familia'],
+                    'palabra': r['palabra']
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error en detección por familia: {e}")
+            return None
+
+    def normalizar_texto(self, texto: str) -> str:
+        """
+        Elimina tildes, diéresis y convierte a mayúsculas
+        Ejemplo: "ACEITE DE OLIVA" → "ACEITE DE OLIVA"
+                 "CAFÉ YOCOIMA" → "CAFE YOCOIMA"
+                 "PIÑA" → "PINA"
+        """
+        if not texto or not isinstance(texto, str):
+            return ""
+        
+        import unicodedata
+        
+        # 1. Convertir a mayúsculas
+        texto_mayusculas = texto.upper()
+        
+        # 2. Normalizar para separar tildes (NFKD descompone caracteres)
+        texto_normalizado = unicodedata.normalize('NFKD', texto_mayusculas)
+        
+        # 3. Eliminar los caracteres combinados (tildes, diéresis)
+        texto_sin_tildes = ''.join([c for c in texto_normalizado if not unicodedata.combining(c)])
+        
+        return texto_sin_tildes
+
+    def detectar_marca(self, nombre: str) -> Optional[Dict]:
+        """
+        Detecta si el nombre del producto contiene una marca conocida
+        Las marcas se cargan desde la base de datos
+        """
+        if not nombre or not hasattr(self, 'repo_aprendizaje') or not self.repo_aprendizaje:
+            return None
+        
+        try:
+            cursor = self.repo_aprendizaje.conn.cursor()
+            
+            # Buscar marcas que estén contenidas en el nombre
+            query = """
+            SELECT nombre_marca, idcategoria_predeterminada, id_impuesto_predeterminado, veces_vista
+            FROM marcas_conocidas
+            WHERE ? LIKE '%' + nombre_marca + '%' 
+              AND activa = 1
+            ORDER BY LEN(nombre_marca) DESC  -- Marcas más largas primero (más específicas)
+            """
+            
+            cursor.execute(query, (nombre,))
+            resultado = cursor.fetchone()
+            
+            if resultado:
+                # Actualizar contador de veces vista
+                update_query = """
+                UPDATE marcas_conocidas 
+                SET veces_vista = veces_vista + 1,
+                    ultima_vez_vista = GETDATE()
+                WHERE nombre_marca = ?
+                """
+                cursor.execute(update_query, (resultado[0],))
+                self.repo_aprendizaje.conn.commit()
+                
+                logger.info(f"🏷️ Marca detectada: '{resultado[0]}'")
+                
+                return {
+                    'idcategoria': resultado[1],
+                    'id_impuesto': resultado[2],
+                    'confianza': 0.98,  # Alta confianza por ser marca conocida
+                    'metodo': 'marca_conocida',
+                    'marca': resultado[0],
+                    'veces_vista': resultado[3] + 1
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error detectando marca: {e}")
+            return None
+
+    def cargar_aprendizaje(self):
+        """
+        Carga las palabras aprendidas desde la base de datos
+        """
+        if not self.repo_aprendizaje:
+            logger.warning("⚠️ Repositorio de aprendizaje no disponible")
+            return
+        
+        try:
+            # Obtener estadísticas para debug
+            stats = self.repo_aprendizaje.obtener_estadisticas()
+            if stats.get('total_palabras', 0) > 0:
+                logger.info(f"📚 Aprendizaje cargado: {stats['total_palabras']} palabras (confianza: {stats['confianza_promedio']:.0%})")
+        except Exception as e:
+            logger.error(f"❌ Error cargando aprendizaje: {e}")
+
+    def buscar_en_aprendizaje(self, nombre: str) -> Optional[Dict]:
+        """
+        Busca el producto en las palabras aprendidas
+        
+        Devuelve sugerencia basada en aprendizaje previo
+        """
+        if not self.repo_aprendizaje or not nombre:
+            return None
+        
+        nombre_upper = nombre.upper()
+        palabras = nombre_upper.split()
+        
+        # Buscar cada palabra en el aprendizaje
+        for palabra in palabras:
+            if len(palabra) < 3:  # Ignorar palabras muy cortas
+                continue
+            
+            resultado = self.repo_aprendizaje.buscar_por_palabra(palabra)
+            if resultado:
+                confianza = resultado.get('confianza', 0.8)
+                return {
+                    'idcategoria': resultado['idcategoria'],
+                    'id_impuesto': resultado['id_impuesto'],
+                    'confianza': confianza,
+                    'metodo': 'aprendizaje',
+                    'palabra': resultado['palabra'],
+                    'veces_usada': resultado['veces_usada']
+                }
+        
+        # Si no encuentra palabra exacta, buscar similares
+        similares = self.repo_aprendizaje.buscar_palabras_similares(nombre_upper, 1)
+        if similares:
+            s = similares[0]
+            return {
+                'idcategoria': s['idcategoria'],
+                'id_impuesto': s['id_impuesto'],
+                'confianza': s['confianza'] * 0.85,  # Penalizar por similitud
+                'metodo': 'aprendizaje_similar',
+                'palabra': s['palabra']
+            }
+        
+        return None
+
+    def registrar_aprendizaje(self, nombre: str, idcategoria: int, 
+                              id_impuesto: int, usuario_id: int = None):
+        """
+        Registra una corrección manual del usuario para que la IA aprenda
+        Ahora incluye categorías de motos (101-111)
+        """
+        if not self.repo_aprendizaje:
+            logger.warning("⚠️ No se puede aprender: repositorio no disponible")
+            return
+        
+        try:
+            # Extraer palabras clave del nombre
+            palabras = nombre.upper().split()
+            palabras_aprendidas = []
+            
+            for palabra in palabras:
+                if len(palabra) < 3:  # Ignorar palabras muy cortas
+                    continue
+                    
+                if self.repo_aprendizaje.registrar_uso(palabra, idcategoria, id_impuesto):
+                    palabras_aprendidas.append(palabra)
+            
+            # Determinar el tipo de categoría para el mensaje
+            tipo_cat = "MOTOS" if idcategoria >= 100 else "SUPERMERCADO"
+            
+            if palabras_aprendidas:
+                logger.info(f"🧠 IA aprendió ({tipo_cat}): '{', '.join(palabras_aprendidas)}' → Cat:{idcategoria}, Imp:{id_impuesto}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error registrando aprendizaje: {e}")
+
+    def detectar_categoria_motos(self, nombre: str) -> Optional[Dict]:
+        """
+        Detecta si el producto pertenece a la categoría de motos
+        y devuelve el ID de categoría (101-111) e impuesto (siempre 2 - General)
+        """
+        if not nombre:
+            return None
+        
+        nombre_upper = nombre.upper()
+        
+        # Reglas para cada categoría de motos
+        reglas_motos = [
+            # (palabras clave, idcategoria, nombre_categoria)
+            (['PISTON', 'ANILLO', 'CIGUEÑAL', 'VALVULA', 'EMPACADURA'], 101, 'Motor'),
+            (['CADENA', 'PIÑON', 'CORONA', 'CORREA', 'EMBRAGUE'], 102, 'Transmisión'),
+            (['PASTILLA', 'BANDA', 'DISCO FRENO', 'GUAYA', 'FRENO'], 103, 'Frenos'),
+            (['AMORTIGUADOR', 'BARRA', 'RODAMIENTO', 'SUSPENSION'], 104, 'Suspensión'),
+            (['BATERIA', 'BUJIA', 'CDI', 'REGULADOR', 'BOMBILLO', 'BOYA'], 105, 'Eléctrico'),
+            (['ACEITE 2T', 'ACEITE 4T', 'LIGA FRENO', 'LUBRICANTE', 'ACEITE MOTOR'], 106, 'Lubricantes'),
+            (['FILTRO ACEITE', 'FILTRO AIRE', 'FILTRO GASOLINA'], 107, 'Filtros'),
+            (['CAUCHO', 'LLANTA', 'TRIPA', 'NEUMATICO', 'CAMARA'], 108, 'Cauchos'),
+            (['CASCO', 'GUANTE', 'CHAQUETA', 'MALETERO', 'CALCOMANIA', 'PEGATINA'], 109, 'Accesorios'),
+            (['HERRAMIENTA', 'LLAVE', 'DESARMADOR', 'ALICATE', 'JUEGO LLAVES'], 110, 'Herramientas'),
+            (['SERVICIO', 'MANO OBRA', 'REPARACION', 'CAMBIO ACEITE', 'ENTONACION'], 111, 'Servicios')
+        ]
+        
+        # Buscar coincidencias
+        for palabras, cat_id, cat_nombre in reglas_motos:
+            for palabra in palabras:
+                if palabra in nombre_upper:
+                    # Encontrar la palabra exacta que coincidió
+                    palabra_encontrada = palabra
+                    return {
+                        'idcategoria': cat_id,
+                        'nombre_categoria': cat_nombre,
+                        'id_impuesto': 2,  # Siempre General (G) para motos
+                        'confianza': 0.90,
+                        'tipo': 'MOTOS',
+                        'palabra_encontrada': palabra_encontrada,
+                        'metodo': 'regla_fija_motos'
+                    }
+        
+        return None
+    
+    def cargar_reglas_iniciales(self):
+        """Carga reglas por defecto en memoria"""
+        # Exentos (id_impuesto=1)
+        self.palabras_clave = {
+            'harina': 1, 'arroz': 1, 'azucar': 1, 'leche': 1, 'huevo': 1,
+            'pan': 1, 'pasta': 1, 'carne': 1, 'pollo': 1, 'pescado': 1,
+            'fruta': 1, 'verdura': 1, 'legumbre': 1, 'medicina': 1,
+            # Generales (id_impuesto=2)
+            'mayonesa': 2, 'salsa': 2, 'atun': 2, 'gaseosa': 2, 'refresco': 2,
+            'jabon': 2, 'detergente': 2, 'shampoo': 2, 'desodorante': 2,
+        }
+        
+        self.marcas_conocidas = {
+            'santoni': 1, 'bondora': 1, 'konfit': 1, 'pampa': 1,
+            'ole': 2, 'ronco': 2,
+        }
+        
+        self.reglas_cargadas = True
+        logger.info(f"✅ IAProductosService inicializado con {len(self.palabras_clave)} palabras clave")
+    
+    def analizar_producto(self, nombre: str, codigo_barras: str = None) -> Optional[Dict]:
+        """
+        Analiza el nombre del producto y sugiere categoría e impuesto
+        Primero intenta con reglas fijas, luego con aprendizaje
+
+        Args:
+            nombre: Nombre del producto
+            codigo_barras: Código de barras (opcional)
+        """
+        if not nombre:
+            return None
+
+        # Normalizar texto para ignorar tildes
+        nombre_normalizado = self.normalizar_texto(nombre)
+        logger.debug(f"🔍 Normalizado: '{nombre}' → '{nombre_normalizado}'")
+
+        # ===== NUEVO: Detección por código de barras (si disponible) =====
+        pista_impuesto = None
+        if codigo_barras:
+            resultado_codigo = self.detectar_por_codigo_barras(codigo_barras, nombre_normalizado)
+            if resultado_codigo:
+                # Si el código de barras dio una categoría específica, usarla
+                if resultado_codigo.get('idcategoria'):
+                    logger.info(f"📦 Detectado por código de barras: {resultado_codigo.get('pais')} → Cat:{resultado_codigo['idcategoria']}")
+                    return resultado_codigo
+
+                # Si solo dio pista de impuesto, guardarla para después
+                pista_impuesto = resultado_codigo.get('id_impuesto')
+                logger.info(f"📦 Pista por código de barras: producto importado (impuesto {pista_impuesto})")
+        # ================================================================
+
+        # ===== DETECCIÓN POR MARCA =====
+        resultado_marca = self.detectar_marca(nombre_normalizado)
+        if resultado_marca:
+            logger.info(f"🏷️ Producto detectado por marca: {resultado_marca['marca']}")
+            
+            # Aprendizaje por acierto de marca
+            if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+                try:
+                    self.repo_aprendizaje.registrar_uso(
+                        palabra=resultado_marca['marca'],
+                        idcategoria=resultado_marca['idcategoria'],
+                        id_impuesto=resultado_marca['id_impuesto']
+                    )
+                    logger.info(f"🧠 Reforzando aprendizaje por marca: '{resultado_marca['marca']}'")
+                except Exception as e:
+                    logger.error(f"Error registrando aprendizaje de marca: {e}")
+            
+            return resultado_marca
+        # =============================================================
+
+        # ===== NUEVO: Detección por familia =====
+        if hasattr(self, 'repo_familia') and self.repo_familia:
+            resultado_familia = self.detectar_por_familia(nombre_normalizado)
+            if resultado_familia:
+                return resultado_familia
+        # =======================================
+
+        # 1. Intentar detectar si es producto de motos (reglas fijas)
+        resultado_motos = self.detectar_categoria_motos(nombre_normalizado)
+        if resultado_motos:
+            logger.info(f"🏍️ Producto de motos detectado por reglas: {resultado_motos['nombre_categoria']}")
+
+            # ===== APRENDIZAJE POR ACIERTO DE MOTOS =====
+            if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+                try:
+                    palabra = resultado_motos.get('palabra_encontrada', '')
+                    if palabra:
+                        self.repo_aprendizaje.registrar_uso(
+                            palabra=palabra,
+                            idcategoria=resultado_motos['idcategoria'],
+                            id_impuesto=resultado_motos['id_impuesto']
+                        )
+                        logger.info(f"🧠 Reforzando aprendizaje de motos: '{palabra}'")
+                except Exception as e:
+                    logger.error(f"Error registrando aprendizaje de motos: {e}")
+            # ============================================
+
+            return resultado_motos
+
+        # 2. Intentar con aprendizaje (si existe)
+        if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+            # Primero buscar por similitud
+            resultados_similares = self.repo_aprendizaje.buscar_similares(nombre_normalizado, 1)
+            if resultados_similares:
+                r = resultados_similares[0]
+                logger.info(f"🧠 Producto reconocido por similitud: '{r['palabra']}' (confianza: {r['confianza']:.0%})")
+                return {
+                    'idcategoria': r['idcategoria'],
+                    'id_impuesto': r['id_impuesto'],
+                    'confianza': r['confianza'] * 0.95,
+                    'metodo': 'aprendizaje_similar',
+                    'palabra': r['palabra']
+                }
+
+            # Si no hay similitud, intentar búsqueda exacta
+            resultado_aprendizaje = self.buscar_en_aprendizaje(nombre_normalizado)
+            if resultado_aprendizaje:
+                logger.info(f"🧠 Producto reconocido por aprendizaje exacto (confianza: {resultado_aprendizaje['confianza']:.0%})")
+                return resultado_aprendizaje
+
+        # 3. Reglas fijas de supermercado
+        # ===== CHUCHERÍAS =====
+        if any(p in nombre_normalizado for p in ['PAPITA', 'DORITO', 'SNACK', 'BOTANA', 'CHIPS']):
+            return {
+                'idcategoria': 2,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Víveres',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== BEBIDAS PROCESADAS =====
+        if any(p in nombre_normalizado for p in ['MALTA', 'MALTIN', 'POLAR', 'JUGO', 'NECTAR']):
+            return {
+                'idcategoria': 3,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Bebidas',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== ENLATADOS =====
+        if any(p in nombre_normalizado for p in ['ATUN', 'SARDINA', 'MAYONESA']):
+            return {
+                'idcategoria': 2,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Víveres',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== EMBUTIDOS =====
+        if any(p in nombre_normalizado for p in ['JAMON', 'SALCHICHA', 'MORTADELA']):
+            return {
+                'idcategoria': 7,
+                'id_impuesto': 1,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Perecederos',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== PISTA DE IMPUESTO POR CÓDIGO DE BARRAS =====
+        if pista_impuesto:
+            logger.info(f"📦 Usando pista de código de barras: impuesto {pista_impuesto}")
+            return {
+                'idcategoria': None,
+                'id_impuesto': pista_impuesto,
+                'confianza': 0.60,
+                'metodo': 'codigo_barras_solo_impuesto',
+                'nota': 'Producto importado - requiere categoría'
+            }
+        # ==================================================
+
+        # 4. Si nada funciona, devolver None
+        logger.info(f"🤔 IA no reconoce '{nombre}', se preguntará al usuario")
+        return None
+    
+    def obtener_nombre_impuesto(self, id_impuesto: int) -> str:
+        """Obtiene el nombre del impuesto por su ID"""
+        mapa = {1: 'Exento', 2: 'General', 3: 'Reducida', 4: 'Adicional'}
+        return mapa.get(id_impuesto, 'Desconocido')
+    
+    def obtener_letra_fiscal(self, id_impuesto: int) -> str:
+        """Obtiene la letra fiscal por ID de impuesto"""
+        mapa = {1: 'E', 2: 'G', 3: 'R', 4: 'A'}
+        return mapa.get(id_impuesto, '?')
+
+    def detectar_categoria_venezolana(self, nombre: str) -> int:
+        """
+        Detecta la categoría venezolana basada en el nombre del producto
+        Usando los IDs REALES de la BD:
+        1: Electrónicos
+        2: Viveres
+        3: Bebidas
+        4: Lácteos
+        5: Otros
+        7: Perecederos
+        8: Limpieza
+        9: Higiene
+        """
+        if not nombre:
+            return 5  # Otros por defecto
+        
+        nombre_upper = nombre.upper()
+        
+        # ELECTRÓNICOS (ID 1)
+        if any(palabra in nombre_upper for palabra in ['LAPTOP', 'COMPUTADORA', 'MOUSE', 'TECLADO', 
+                                                        'MONITOR', 'CELULAR', 'TELEFONO', 'IMPRESORA']):
+            return 1
+        
+        # VÍVERES (ID 2)
+        if any(palabra in nombre_upper for palabra in ['HARINA', 'ARROZ', 'PASTA', 'GRANO', 'LENTEJA', 
+                                                        'CARAOTA', 'QUINCHONCHO', 'AZUCAR', 'SAL', 
+                                                        'ATUN', 'SARDINA', 'ENLATADO', 'MAYONESA', 
+                                                        'SALSA', 'VINAGRE', 'ACEITE', 'CAFE']):
+            return 2
+        
+        # BEBIDAS (ID 3)
+        if any(palabra in nombre_upper for palabra in ['REFRESCO', 'GASEOSA', 'JUGO', 'MALTA', 'AGUA',
+                                                        'POLAR', 'COCA', 'PEPSI', 'CHINOTO', 'FRESCOLITA']):
+            return 3
+        
+        # LÁCTEOS (ID 4)
+        if any(palabra in nombre_upper for palabra in ['LECHE', 'QUESO', 'YOGURT', 'MANTEQUILLA', 
+                                                        'MARGARINA', 'KUMIS']):
+            return 4
+        
+        # PERECEDEROS (ID 7)
+        if any(palabra in nombre_upper for palabra in ['CARNE', 'POLLO', 'PESCADO', 'RES', 'CERDO',
+                                                        'FRUTA', 'VERDURA', 'CEBOLLA', 'TOMATE',
+                                                        'PIMENTON', 'Auyama', 'LECHOSA', 'PATILLA',
+                                                        'MELON', 'CAMBUR', 'PLATANO']):
+            return 7
+        
+        # LIMPIEZA (ID 8)
+        if any(palabra in nombre_upper for palabra in ['JABON', 'DETERGENTE', 'CLORO', 'LIMPIDO',
+                                                        'SUAVIZANTE', 'LYSOL', 'FAB', 'ARIEL']):
+            return 8
+        
+        # HIGIENE (ID 9)
+        if any(palabra in nombre_upper for palabra in ['SHAMPOO', 'ACONDICIONADOR', 'DESODORANTE',
+                                                        'PASTA DENTAL', 'CEPILLO', 'JABON DE BAÑO',
+                                                        'PREND', 'COLGATE', 'AXE']):
+            return 9
+        
+        # OTROS (ID 5) - por defecto
+        return 5
+
+
+=== MÉTODOS CRÍTICOS DE IA ===
+
+----- MÉTODO analizar_producto -----
+    def analizar_producto(self, nombre: str, codigo_barras: str = None) -> Optional[Dict]:
+        """
+        Analiza el nombre del producto y sugiere categoría e impuesto
+        Primero intenta con reglas fijas, luego con aprendizaje
+
+        Args:
+            nombre: Nombre del producto
+            codigo_barras: Código de barras (opcional)
+        """
+        if not nombre:
+            return None
+
+        # Normalizar texto para ignorar tildes
+        nombre_normalizado = self.normalizar_texto(nombre)
+        logger.debug(f"🔍 Normalizado: '{nombre}' → '{nombre_normalizado}'")
+
+        # ===== NUEVO: Detección por código de barras (si disponible) =====
+        pista_impuesto = None
+        if codigo_barras:
+            resultado_codigo = self.detectar_por_codigo_barras(codigo_barras, nombre_normalizado)
+            if resultado_codigo:
+                # Si el código de barras dio una categoría específica, usarla
+                if resultado_codigo.get('idcategoria'):
+                    logger.info(f"📦 Detectado por código de barras: {resultado_codigo.get('pais')} → Cat:{resultado_codigo['idcategoria']}")
+                    return resultado_codigo
+
+                # Si solo dio pista de impuesto, guardarla para después
+                pista_impuesto = resultado_codigo.get('id_impuesto')
+                logger.info(f"📦 Pista por código de barras: producto importado (impuesto {pista_impuesto})")
+        # ================================================================
+
+        # ===== DETECCIÓN POR MARCA =====
+        resultado_marca = self.detectar_marca(nombre_normalizado)
+        if resultado_marca:
+            logger.info(f"🏷️ Producto detectado por marca: {resultado_marca['marca']}")
+            
+            # Aprendizaje por acierto de marca
+            if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+                try:
+                    self.repo_aprendizaje.registrar_uso(
+                        palabra=resultado_marca['marca'],
+                        idcategoria=resultado_marca['idcategoria'],
+                        id_impuesto=resultado_marca['id_impuesto']
+                    )
+                    logger.info(f"🧠 Reforzando aprendizaje por marca: '{resultado_marca['marca']}'")
+                except Exception as e:
+                    logger.error(f"Error registrando aprendizaje de marca: {e}")
+            
+            return resultado_marca
+        # =============================================================
+
+        # ===== NUEVO: Detección por familia =====
+        if hasattr(self, 'repo_familia') and self.repo_familia:
+            resultado_familia = self.detectar_por_familia(nombre_normalizado)
+            if resultado_familia:
+                return resultado_familia
+        # =======================================
+
+        # 1. Intentar detectar si es producto de motos (reglas fijas)
+        resultado_motos = self.detectar_categoria_motos(nombre_normalizado)
+        if resultado_motos:
+            logger.info(f"🏍️ Producto de motos detectado por reglas: {resultado_motos['nombre_categoria']}")
+
+            # ===== APRENDIZAJE POR ACIERTO DE MOTOS =====
+            if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+                try:
+                    palabra = resultado_motos.get('palabra_encontrada', '')
+                    if palabra:
+                        self.repo_aprendizaje.registrar_uso(
+                            palabra=palabra,
+                            idcategoria=resultado_motos['idcategoria'],
+                            id_impuesto=resultado_motos['id_impuesto']
+                        )
+                        logger.info(f"🧠 Reforzando aprendizaje de motos: '{palabra}'")
+                except Exception as e:
+                    logger.error(f"Error registrando aprendizaje de motos: {e}")
+            # ============================================
+
+            return resultado_motos
+
+        # 2. Intentar con aprendizaje (si existe)
+        if hasattr(self, 'repo_aprendizaje') and self.repo_aprendizaje:
+            # Primero buscar por similitud
+            resultados_similares = self.repo_aprendizaje.buscar_similares(nombre_normalizado, 1)
+            if resultados_similares:
+                r = resultados_similares[0]
+                logger.info(f"🧠 Producto reconocido por similitud: '{r['palabra']}' (confianza: {r['confianza']:.0%})")
+                return {
+                    'idcategoria': r['idcategoria'],
+                    'id_impuesto': r['id_impuesto'],
+                    'confianza': r['confianza'] * 0.95,
+                    'metodo': 'aprendizaje_similar',
+                    'palabra': r['palabra']
+                }
+
+            # Si no hay similitud, intentar búsqueda exacta
+            resultado_aprendizaje = self.buscar_en_aprendizaje(nombre_normalizado)
+            if resultado_aprendizaje:
+                logger.info(f"🧠 Producto reconocido por aprendizaje exacto (confianza: {resultado_aprendizaje['confianza']:.0%})")
+                return resultado_aprendizaje
+
+        # 3. Reglas fijas de supermercado
+        # ===== CHUCHERÍAS =====
+        if any(p in nombre_normalizado for p in ['PAPITA', 'DORITO', 'SNACK', 'BOTANA', 'CHIPS']):
+            return {
+                'idcategoria': 2,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Víveres',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== BEBIDAS PROCESADAS =====
+        if any(p in nombre_normalizado for p in ['MALTA', 'MALTIN', 'POLAR', 'JUGO', 'NECTAR']):
+            return {
+                'idcategoria': 3,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Bebidas',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== ENLATADOS =====
+        if any(p in nombre_normalizado for p in ['ATUN', 'SARDINA', 'MAYONESA']):
+            return {
+                'idcategoria': 2,
+                'id_impuesto': 2,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Víveres',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== EMBUTIDOS =====
+        if any(p in nombre_normalizado for p in ['JAMON', 'SALCHICHA', 'MORTADELA']):
+            return {
+                'idcategoria': 7,
+                'id_impuesto': 1,
+                'confianza': 0.90,
+                'tipo': 'SUPERMERCADO',
+                'categoria_nombre': 'Perecederos',
+                'metodo': 'regla_fija'
+            }
+
+        # ===== PISTA DE IMPUESTO POR CÓDIGO DE BARRAS =====
+        if pista_impuesto:
+            logger.info(f"📦 Usando pista de código de barras: impuesto {pista_impuesto}")
+            return {
+                'idcategoria': None,
+                'id_impuesto': pista_impuesto,
+                'confianza': 0.60,
+                'metodo': 'codigo_barras_solo_impuesto',
+                'nota': 'Producto importado - requiere categoría'
+            }
+        # ==================================================
+
+        # 4. Si nada funciona, devolver None
+        logger.info(f"🤔 IA no reconoce '{nombre}', se preguntará al usuario")
+        return None
+    
+    def obtener_nombre_impuesto(self, id_impuesto: int) -> str:
+        """Obtiene el nombre del impuesto por su ID"""
+        mapa = {1: 'Exento', 2: 'General', 3: 'Reducida', 4: 'Adicional'}
+        return mapa.get(id_impuesto, 'Desconocido')
+    
+    def obtener_letra_fiscal(self, id_impuesto: int) -> str:
+        """Obtiene la letra fiscal por ID de impuesto"""
+        mapa = {1: 'E', 2: 'G', 3: 'R', 4: 'A'}
+        return mapa.get(id_impuesto, '?')
+
+    def detectar_categoria_venezolana(self, nombre: str) -> int:
+        """
+        Detecta la categoría venezolana basada en el nombre del producto
+        Usando los IDs REALES de la BD:
+        1: Electrónicos
+        2: Viveres
+        3: Bebidas
+        4: Lácteos
+        5: Otros
+        7: Perecederos
+        8: Limpieza
+        9: Higiene
+        """
+        if not nombre:
+            return 5  # Otros por defecto
+        
+        nombre_upper = nombre.upper()
+        
+        # ELECTRÓNICOS (ID 1)
+        if any(palabra in nombre_upper for palabra in ['LAPTOP', 'COMPUTADORA', 'MOUSE', 'TECLADO', 
+                                                        'MONITOR', 'CELULAR', 'TELEFONO', 'IMPRESORA']):
+            return 1
+        
+        # VÍVERES (ID 2)
+        if any(palabra in nombre_upper for palabra in ['HARINA', 'ARROZ', 'PASTA', 'GRANO', 'LENTEJA', 
+                                                        'CARAOTA', 'QUINCHONCHO', 'AZUCAR', 'SAL', 
+                                                        'ATUN', 'SARDINA', 'ENLATADO', 'MAYONESA', 
+                                                        'SALSA', 'VINAGRE', 'ACEITE', 'CAFE']):
+            return 2
+
+----- MÉTODO __init__ de IAProductosService -----
+    def __init__(self, repo_aprendizaje=None, repo_reglas=None, repo_impuestos=None, repo_familia=None, repo_codigo_barras=None):
+        """
+        Inicializa el servicio de IA para productos
+
+        Args:
+            repo_aprendizaje: Repositorio de aprendizaje (opcional)
+            repo_reglas: Repositorio de reglas (opcional)
+            repo_impuestos: Repositorio de impuestos (opcional)
+            repo_familia: Repositorio de familias (opcional)
+            repo_codigo_barras: Repositorio de códigos de barras (opcional)
+        """
+        # ===== Repositorio de aprendizaje =====
+        if repo_aprendizaje is not None:
+            self.repo_aprendizaje = repo_aprendizaje
+            logger.info("✅ Usando repositorio de aprendizaje proporcionado")
+        else:
+            try:
+                from capa_datos.aprendizaje_repo import AprendizajeRepositorio
+                self.repo_aprendizaje = AprendizajeRepositorio()
+                logger.info("✅ Repositorio de aprendizaje creado automáticamente")
+            except Exception as e:
+                logger.error(f"❌ Error creando repositorio de aprendizaje: {e}")
+                self.repo_aprendizaje = None
+        # =====================================
+
+        self.repo_reglas = repo_reglas
+        self.repo_impuestos = repo_impuestos
+
+        # ===== Repositorio de familias =====
+        if repo_familia is not None:
+            self.repo_familia = repo_familia
+            logger.info("✅ Usando repositorio de familias proporcionado")
+        else:
+            try:
+                from capa_datos.familia_repo import FamiliaRepositorio
+                if self.repo_aprendizaje and hasattr(self.repo_aprendizaje, 'conn'):
+                    self.repo_familia = FamiliaRepositorio(self.repo_aprendizaje.conn)
+                else:
+                    self.repo_familia = FamiliaRepositorio()
+                logger.info("✅ Repositorio de familias creado automáticamente")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo crear repositorio de familias: {e}")
+                self.repo_familia = None
+        # =================================
+
+        # ===== Repositorio de códigos de barras =====
+        if repo_codigo_barras is not None:
+            self.repo_codigo_barras = repo_codigo_barras
+            logger.info("✅ Usando repositorio de códigos de barras proporcionado")
+        else:
+            try:
+
+=== SCRIPTS DE PRUEBA ===
+
+----- test_familias.py -----
+#!/usr/bin/env python3
+# test_familias.py
+
+import logging
+from capa_datos.aprendizaje_repo import AprendizajeRepositorio
+from capa_datos.familia_repo import FamiliaRepositorio
+from capa_negocio.ia_productos_service import IAProductosService
+
+logging.basicConfig(level=logging.INFO)
+
+def probar_familias():
+    print("🧪 PRUEBA DE FAMILIAS DE PALABRAS")
+    print("="*60)
+    
+    # Inicializar repositorios
+    repo_aprendizaje = AprendizajeRepositorio()
+    repo_familia = FamiliaRepositorio(repo_aprendizaje.conn)
+    
+    # Crear algunas familias de prueba
+    print("\n📝 Creando familias de prueba...")
+    
+    # Familia LÁCTEOS
+    id_lacteos = repo_familia.crear_familia("LACTEOS", "Productos lácteos")
+    
+    # Familia PASTILLAS FRENO
+    id_pastillas = repo_familia.crear_familia("PASTILLAS_FRENO", "Sistemas de freno")
+    
+    # Registrar palabras y asignarlas a familias
+    print("\n📝 Registrando palabras de prueba...")
+    
+    # Palabras de lácteos
+    palabras_lacteos = ["LECHE", "QUESO", "YOGURT", "MANTEQUILLA"]
+    for palabra in palabras_lacteos:
+        repo_aprendizaje.registrar_uso(palabra, 4, 1)
+        # Obtener ID de la palabra
+        cursor = repo_aprendizaje.conn.cursor()
+        cursor.execute("SELECT idpalabra FROM aprendizaje_palabras WHERE palabra = ?", (palabra,))
+        idpalabra = cursor.fetchone()[0]
+        repo_familia.asignar_palabra_a_familia(idpalabra, id_lacteos)
+        print(f"   ✅ '{palabra}' → Familia LACTEOS")
+    
+    # Palabras de frenos
+    palabras_frenos = ["PASTILLA", "FRENO", "BALATA", "ZAPATA"]
+    for palabra in palabras_frenos:
+        repo_aprendizaje.registrar_uso(palabra, 103, 2)
+        cursor = repo_aprendizaje.conn.cursor()
+        cursor.execute("SELECT idpalabra FROM aprendizaje_palabras WHERE palabra = ?", (palabra,))
+        idpalabra = cursor.fetchone()[0]
+        repo_familia.asignar_palabra_a_familia(idpalabra, id_pastillas)
+        print(f"   ✅ '{palabra}' → Familia PASTILLAS_FRENO")
+    
+    # Probar IA con familias
+    print("\n🤖 Probando IA con detección por familias:")
+    print("-" * 40)
+    
+    ia = IAProductosService(repo_aprendizaje=repo_aprendizaje)
+    ia.repo_familia = repo_familia  # Asignar repositorio de familias
+    
+    casos = [
+        "LECHE COMPLETA",
+        "YOGURT FRESA",
+        "PASTILLAS DE FRENO",
+        "BALATAS DELANTERAS",
+        "QUESO BLANCO"
+    ]
+    
+    for caso in casos:
+        print(f"\n🔍 Analizando: '{caso}'")
+        resultado = ia.analizar_producto(caso)
+        if resultado:
+            print(f"   ✅ Detectado por: {resultado.get('metodo', 'desconocido')}")
+            if 'familia' in resultado:
+                print(f"   👪 Familia: {resultado['familia']}")
+            print(f"   📊 Categoría: {resultado['idcategoria']}, Impuesto: {resultado['id_impuesto']}")
+        else:
+            print("   ❌ No detectado")
+    
+    # Mostrar familias
+    print("\n📊 FAMILIAS REGISTRADAS:")
+    print("-" * 40)
+    familias = repo_familia.obtener_todas_familias()
+    for f in familias:
+        print(f"   👪 {f['nombre_familia']}: {f['total_palabras']} palabras, {f['usos_totales'] or 0} usos")
+
+if __name__ == "__main__":
+    probar_familias()
+
+----- test_normalizacion.py -----
+#!/usr/bin/env python3
+# test_normalizacion.py
+
+import logging
+from capa_negocio.ia_productos_service import IAProductosService
+
+# Configurar logging para ver mensajes
+logging.basicConfig(level=logging.INFO)
+
+def probar_normalizacion():
+    """
+    Prueba la función de normalización de textos
+    """
+    print("\n🧪 PRUEBA DE NORMALIZACIÓN DE TEXTOS")
+    print("="*60)
+    
+    ia = IAProductosService()
+    
+    casos = [
+        ("CAFÉ YOCOIMA", "CAFE YOCOIMA"),
+        ("ACEITE DE OLIVA", "ACEITE DE OLIVA"),
+        ("PIÑA COLADA", "PINA COLADA"),
+        ("JABÓN LÍQUIDO", "JABON LIQUIDO"),
+        ("MOTOR PIÑÓN", "MOTOR PINON"),
+        ("CAFÉ CON LECHE", "CAFE CON LECHE"),
+        ("ÉXITO", "EXITO"),
+        ("ACCIDENTE", "ACCIDENTE"),  # Sin tildes
+        ("CANCIÓN", "CANCION"),
+        ("CORAZÓN", "CORAZON"),
+        ("AVIÓN", "AVION"),
+        ("FERRETERÍA", "FERRETERIA"),
+        ("ALMACÉN", "ALMACEN"),
+        ("COMPRACIÓN", "COMPRACION"),
+        ("TELÉFONO", "TELEFONO"),
+        ("PÁGINA", "PAGINA"),
+        ("ÚTILES", "UTILES"),
+        ("DRÁCULA", "DRACULA"),
+    ]
+    
+    print("\n📋 CASOS DE PRUEBA:")
+    print("-"*60)
+    
+    exitosos = 0
+    fallidos = 0
+    
+    for i, (original, esperado) in enumerate(casos, 1):
+        normalizado = ia.normalizar_texto(original)
+        es_correcto = (normalizado == esperado)
+        
+        if es_correcto:
+            exitosos += 1
+            marca = "✅"
+        else:
+            fallidos += 1
+            marca = "❌"
+        
+        print(f"{marca} Caso {i:2d}:")
+        print(f"   Original:   '{original}'")
+        print(f"   Normalizado: '{normalizado}'")
+        print(f"   Esperado:    '{esperado}'")
+        print(f"   Resultado:   {'CORRECTO' if es_correcto else 'INCORRECTO'}")
+        print()
+    
+    print("="*60)
+    print(f"📊 RESULTADOS: {exitosos} exitosos, {fallidos} fallidos")
+    print(f"🎯 Precisión: {exitosos/len(casos)*100:.1f}%")
+    print("="*60)
+    
+    # Probar análisis completo con algunos productos
+    print("\n🛒 PRUEBA DE ANÁLISIS COMPLETO")
+    print("="*60)
+    
+    productos_prueba = [
+        "CAFÉ YOCOIMA",
+        "JABÓN LÍQUIDO",
+        "ACEITE DE OLIVA",
+        "PIÑA COLADA",
+        "PASTILLAS DE FRENO",
+        "MOTOR PIÑÓN"
+    ]
+    
+    for producto in productos_prueba:
+        print(f"\n📦 Producto: '{producto}'")
+        resultado = ia.analizar_producto(producto)
+        
+        if resultado:
+            print(f"   ✅ Detectado:")
+            print(f"      - Método: {resultado.get('metodo', 'desconocido')}")
+            print(f"      - Categoría: {resultado.get('idcategoria', 'N/A')}")
+            print(f"      - Impuesto: {resultado.get('id_impuesto', 'N/A')}")
+            print(f"      - Confianza: {resultado.get('confianza', 0):.0%}")
+            if 'palabra' in resultado:
+                print(f"      - Palabra: '{resultado['palabra']}'")
+        else:
+            print(f"   ❌ No detectado")
+    
+    print("\n" + "="*60)
+    print("🏁 PRUEBA COMPLETADA")
+
+def verificar_metodos_aprendizaje():
+    """
+    Verifica que los métodos de aprendizaje estén disponibles
+    """
+    print("\n🔍 VERIFICANDO MÉTODOS DE APRENDIZAJE")
+    print("="*60)
+    
+    ia = IAProductosService()
+    
+    # Verificar si tiene repo_aprendizaje
+    if hasattr(ia, 'repo_aprendizaje') and ia.repo_aprendizaje:
+        print("✅ repo_aprendizaje disponible")
+        
+        # Verificar método buscar_similares
+        if hasattr(ia.repo_aprendizaje, 'buscar_similares'):
+            print("✅ método buscar_similares disponible")
+        else:
+            print("❌ método buscar_similares NO disponible")
+        
+        # Verificar método buscar_por_palabra
+        if hasattr(ia.repo_aprendizaje, 'buscar_por_palabra'):
+            print("✅ método buscar_por_palabra disponible")
+        else:
+            print("❌ método buscar_por_palabra NO disponible")
+    else:
+        print("⚠️ repo_aprendizaje NO disponible (esto puede ser normal en pruebas)")
+
+if __name__ == "__main__":
+    print("🚀 INICIANDO PRUEBAS DE NORMALIZACIÓN")
+    print("="*60)
+    
+    # Verificar métodos primero
+    verificar_metodos_aprendizaje()
+    
+    # Probar normalización
+    probar_normalizacion()
+
+----- verificar_metodo_unico.py -----
+#!/usr/bin/env python3
+# verificar_metodo_unico.py
+
+import inspect
+from capa_negocio.ia_productos_service import IAProductosService
+
+def verificar_metodo_analizar():
+    """
+    Verifica únicamente el método analizar_producto
+    """
+    print("🔍 VERIFICANDO MÉTODO: analizar_producto")
+    print("=" * 60)
+    
+    # Obtener el código fuente del método
+    fuente = inspect.getsource(IAProductosService.analizar_producto)
+    
+    # Mostrar el método completo
+    print("\n📄 CÓDIGO COMPLETO DEL MÉTODO:")
+    print("-" * 60)
+    print(fuente)
+    
+    print("\n" + "=" * 60)
+    
+    # Verificaciones específicas
+    print("\n📋 VERIFICACIONES CLAVE:")
+    print("-" * 60)
+    
+    verificaciones = {
+        "Firma correcta": "def analizar_producto(self, nombre: str, codigo_barras: str = None)",
+        "Tiene docstring": '"""' in fuente,
+        "Normaliza texto": "self.normalizar_texto(nombre)" in fuente,
+        "Bloque código barras": "# ===== NUEVO: Detección por código de barras" in fuente,
+        "Inicializa pista_impuesto": "pista_impuesto = None" in fuente,
+        "Llama detectar_por_codigo_barras": "self.detectar_por_codigo_barras" in fuente,
+        "Verifica categoría": "if resultado_codigo.get('idcategoria')" in fuente,
+        "Captura pista impuesto": "pista_impuesto = resultado_codigo.get('id_impuesto')" in fuente,
+        "Bloque marcas": "# ===== DETECCIÓN POR MARCA" in fuente,
+        "Bloque motos": "# 1. Intentar detectar si es producto de motos" in fuente,
+        "Bloque aprendizaje": "# 2. Intentar con aprendizaje" in fuente,
+        "Búsqueda por similitud": "resultados_similares = self.repo_aprendizaje.buscar_similares" in fuente,
+        "Bloque familias": "# ===== NUEVO: Detección por familia" in fuente,
+        "Pista impuesto final": "if pista_impuesto:" in fuente,
+        "Return pista impuesto": "'metodo': 'codigo_barras_solo_impuesto'" in fuente,
+        "Return final": "return None" in fuente
+    }
+    
+    for descripcion, presente in verificaciones.items():
+        if presente:
+            print(f"   ✅ {descripcion}")
+        else:
+            print(f"   ❌ {descripcion} - NO ENCONTRADO")
+    
+    print("\n" + "=" * 60)
+    
+    # Verificar líneas específicas
+    lineas = fuente.split('\n')
+    print("\n📊 ANÁLISIS DE LÍNEAS CRÍTICAS:")
+    print("-" * 60)
+    
+    lineas_criticas = [
+        ("Línea 1 (firma)", "def analizar_producto"),
+        ("Línea código barras", "# ===== NUEVO: Detección por código de barras"),
+        ("Línea pista_impuesto", "pista_impuesto = None"),
+        ("Línea resultado_codigo", "resultado_codigo = self.detectar_por_codigo_barras"),
+        ("Línea categoría específica", "if resultado_codigo.get('idcategoria'):"),
+        ("Línea return categoría", "return resultado_codigo"),
+        ("Línea captura pista", "pista_impuesto = resultado_codigo.get('id_impuesto')"),
+        ("Línea marcas", "# ===== DETECCIÓN POR MARCA"),
+        ("Línea motos", "# 1. Intentar detectar si es producto de motos"),
+        ("Línea aprendizaje", "# 2. Intentar con aprendizaje"),
+        ("Línea familias", "# ===== NUEVO: Detección por familia"),
+        ("Línea pista final", "if pista_impuesto:"),
+        ("Línea return pista", "'metodo': 'codigo_barras_solo_impuesto'"),
+        ("Línea final", "return None")
+    ]
+    
+    for i, (descripcion, texto) in enumerate(lineas_criticas, 1):
+        encontrado = any(texto in linea for linea in lineas)
+        if encontrado:
+            print(f"   ✅ {descripcion}: ENCONTRADA")
+        else:
+            print(f"   ❌ {descripcion}: NO ENCONTRADA")
+    
+    print("\n" + "=" * 60)
+    print("🏁 VERIFICACIÓN COMPLETADA")
+
+if __name__ == "__main__":
+    verificar_metodo_analizar()
+
+
+=== ESTADÍSTICAS GENERALES ===
+
+-- TOTAL DE REGISTROS
+
+==========================================================
+FIN DEL ANÁLISIS
+==========================================================

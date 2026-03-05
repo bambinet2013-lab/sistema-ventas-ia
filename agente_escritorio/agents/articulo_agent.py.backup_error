@@ -1,0 +1,111 @@
+"""
+Agente de Artículos - Versión con stock corregido
+"""
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from loguru import logger
+from capa_negocio.articulo_service import ArticuloService
+from capa_datos.articulo_repo import ArticuloRepositorio
+import pyodbc
+
+class ArticuloAgent:
+    """Agente que maneja artículos con stock real"""
+    
+    def __init__(self):
+        logger.info("✅ ArticuloAgent inicializado")
+    
+    def _get_connection(self):
+        conn_str = (
+            "DRIVER={ODBC Driver 18 for SQL Server};"
+            "SERVER=localhost,1433;"
+            "DATABASE=SistemaVentas;"
+            "UID=sa;"
+            "PWD=Santi07.;"
+            "TrustServerCertificate=yes;"
+        )
+        return pyodbc.connect(conn_str)
+    
+    def _get_service(self):
+        conn = self._get_connection()
+        repo = ArticuloRepositorio(conn)
+        service = ArticuloService(repo)
+        return service, conn
+    
+    def _agregar_stock_a_articulos(self, articulos, conn):
+        """Agrega stock actual a lista de artículos"""
+        if not articulos:
+            return articulos
+        
+        cursor = conn.cursor()
+        for art in articulos:
+            try:
+                cursor.execute("""
+                    SELECT TOP 1 stock_nuevo FROM kardex 
+                    WHERE idarticulo = ? 
+                    ORDER BY fecha_movimiento DESC
+                """, (art['idarticulo'],))
+                row = cursor.fetchone()
+                art['stock_actual'] = row[0] if row else 0
+            except:
+                art['stock_actual'] = 0
+        
+        return articulos
+    
+    def listar_articulos(self):
+        """Lista todos los artículos con stock"""
+        try:
+            service, conn = self._get_service()
+            articulos = service.listar_articulos()
+            articulos_con_stock = self._agregar_stock_a_articulos(articulos, conn)
+            conn.close()
+            return articulos_con_stock
+        except Exception as e:
+            logger.error(f"❌ Error listando artículos: {e}")
+            return []
+    
+    def buscar_por_codigo(self, codigo):
+        """Busca artículo por código con stock"""
+        try:
+            if not codigo:
+                return None
+            
+            service, conn = self._get_service()
+            articulo = service.buscar_por_codigo(codigo)
+            
+            if articulo:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT TOP 1 stock_nuevo FROM kardex 
+                    WHERE idarticulo = ? 
+                    ORDER BY fecha_movimiento DESC
+                """, (articulo['idarticulo'],))
+                row = cursor.fetchone()
+                articulo['stock_actual'] = row[0] if row else 0
+            
+            conn.close()
+            return articulo
+            
+        except Exception as e:
+            logger.error(f"❌ Error: {e}")
+            return None
+    
+    def buscar_por_nombre(self, nombre):
+        """Busca artículos por nombre con stock"""
+        try:
+            if not nombre or len(nombre) < 2:
+                return []
+            
+            service, conn = self._get_service()
+            resultados = service.buscar_por_nombre(nombre)
+            resultados_con_stock = self._agregar_stock_a_articulos(resultados, conn)
+            conn.close()
+            return resultados_con_stock
+            
+        except Exception as e:
+            logger.error(f"❌ Error buscando '{nombre}': {e}")
+            return []
+    
+    def cerrar(self):
+        pass

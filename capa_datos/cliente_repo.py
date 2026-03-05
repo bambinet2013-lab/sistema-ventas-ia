@@ -107,74 +107,87 @@ class ClienteRepositorio:
             logger.error(f"Error al buscar cliente por documento {tipo_documento}-{num_documento}: {e}")
             return None
     
-    def crear(self, nombre, apellidos, fecha_nacimiento, tipo_documento, 
-              num_documento, sexo=None, direccion=None, telefono=None, email=None):
-        """
-        Inserta un nuevo cliente (fecha_nacimiento puede ser NULL)
-        """
-        try:
-            cursor = self.conn.cursor()
-            
-            query = """
-            INSERT INTO cliente 
-            (nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento, 
-             sexo, direccion, telefono, email)
-            OUTPUT INSERTED.idcliente
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            
-            cursor.execute(query, (
-                nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento,
-                sexo, direccion, telefono, email
-            ))
-            
-            row = cursor.fetchone()
-            idcliente = row[0] if row else None
-            self.conn.commit()
-            
-            if idcliente:
-                logger.info(f"✅ Cliente creado con ID: {idcliente}")
-                return idcliente
-            return None
-                
-        except Exception as e:
-            logger.error(f"❌ Error al crear cliente: {e}")
-            self.conn.rollback()
-            return None
-    
-    def actualizar(self, idcliente, nombre, apellidos, fecha_nacimiento, tipo_documento,
-                   num_documento, sexo=None, direccion=None, telefono=None, email=None):
-        """
-        Actualiza un cliente existente
+def crear(self, nombre, apellidos, fecha_nacimiento, tipo_documento, 
+          num_documento, sexo=None, direccion=None, telefono=None, email=None):
+    """
+    Inserta un nuevo cliente (fecha_nacimiento puede ser NULL)
+    """
+    try:
+        cursor = self.conn.cursor()
         
-        Returns:
-            bool: True si se actualizó correctamente, False en caso contrario
+        # 🔥 SOLUCIÓN: Convertir None a string vacío
+        sexo = sexo or ''
+        direccion = direccion or ''
+        telefono = telefono or ''
+        email = email or ''
+        
+        query = """
+        INSERT INTO cliente 
+        (nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento, 
+         sexo, direccion, telefono, email)
+        OUTPUT INSERTED.idcliente
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        try:
-            cursor = self.conn.cursor()
-            query = """
-            UPDATE cliente 
-            SET nombre = ?, apellidos = ?, fecha_nacimiento = ?,
-                tipo_documento = ?, num_documento = ?, sexo = ?,
-                direccion = ?, telefono = ?, email = ?
-            WHERE idcliente = ?
-            """
-            cursor.execute(query, (
-                nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento,
-                sexo, direccion, telefono, email, idcliente
-            ))
-            self.conn.commit()
-            afectadas = cursor.rowcount
-            if afectadas > 0:
-                logger.info(f"✅ Cliente {idcliente} actualizado correctamente")
-                return True
-            else:
-                logger.warning(f"⚠️ No se encontró el cliente {idcliente} para actualizar")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Error al actualizar cliente {idcliente}: {e}")
-            self.conn.rollback()
+        
+        cursor.execute(query, (
+            nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento,
+            sexo, direccion, telefono, email
+        ))
+        
+        row = cursor.fetchone()
+        idcliente = row[0] if row else None
+        self.conn.commit()
+        
+        if idcliente:
+            logger.info(f"✅ Cliente creado con ID: {idcliente}")
+            return idcliente
+        return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error al crear cliente: {e}")
+        self.conn.rollback()
+        return None
+    
+def actualizar(self, idcliente, nombre, apellidos, fecha_nacimiento, tipo_documento,
+               num_documento, sexo=None, direccion=None, telefono=None, email=None):
+    """
+    Actualiza un cliente existente
+
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    try:
+        cursor = self.conn.cursor()
+        
+        # 🔥 MISMA SOLUCIÓN: Convertir None a string vacío
+        sexo = sexo or ''
+        direccion = direccion or ''
+        telefono = telefono or ''
+        email = email or ''
+        
+        query = """
+        UPDATE cliente 
+        SET nombre = ?, apellidos = ?, fecha_nacimiento = ?,
+            tipo_documento = ?, num_documento = ?, sexo = ?,
+            direccion = ?, telefono = ?, email = ?
+        WHERE idcliente = ?
+        """
+        cursor.execute(query, (
+            nombre, apellidos, fecha_nacimiento, tipo_documento, num_documento,
+            sexo, direccion, telefono, email, idcliente
+        ))
+        self.conn.commit()
+        afectadas = cursor.rowcount
+        if afectadas > 0:
+            logger.info(f"✅ Cliente {idcliente} actualizado correctamente")
+            return True
+        else:
+            logger.warning(f"⚠️ No se encontró el cliente {idcliente} para actualizar")
             return False
+    except Exception as e:
+        logger.error(f"❌ Error al actualizar cliente {idcliente}: {e}")
+        self.conn.rollback()
+        return False
     
     def eliminar(self, idcliente):
         """

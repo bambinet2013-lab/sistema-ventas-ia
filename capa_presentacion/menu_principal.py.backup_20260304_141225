@@ -168,81 +168,6 @@ class SistemaVentas:
         logger.info("✅ ReporteContableService inicializado")
         
         return True
-
-    def mostrar_login(self):
-        """Muestra la pantalla de inicio de sesión"""
-        self.limpiar_pantalla()
-        print("=" * 60)
-        print("                       INICIAR SESIÓN                       ")
-        print("=" * 60)
-        print()
-        print("1. Iniciar sesión")
-        print("2. ¿Olvidaste tu contraseña?")
-        print("0. Volver")
-        print()
-        return input("🔹 Seleccione una opción: ").strip()
-
-    def menu_login(self):
-        """Método principal que maneja el flujo completo del sistema"""
-        if not self.conectar_db():
-            return
-        
-        while True:
-            # === PANTALLA DE LOGIN ===
-            while not self.trabajador_service.get_usuario_actual():
-                opcion_login = self.mostrar_login()
-
-                if opcion_login == '1':
-                    self._login_normal()
-                elif opcion_login == '2':
-                    self._recuperar_contraseña()
-                elif opcion_login == '0':
-                    if self.confirmar_salida():
-                        return
-                else:
-                    print("❌ Opción no válida")
-                    self.pausa()
-
-            # === MENÚ PRINCIPAL ===
-            while self.trabajador_service.get_usuario_actual():
-                opcion = self.mostrar_menu_principal()
-
-                if opcion.upper() == 'X':
-                    self._modificar_tasas()
-                    continue
-
-                if opcion == '1' and hasattr(self, 'menu_clientes'):
-                    self.menu_clientes()
-                elif opcion == '2' and hasattr(self, 'menu_articulos'):
-                    self.menu_articulos()
-                elif opcion == '3' and hasattr(self, 'menu_proveedores'):
-                    self.menu_proveedores()
-                elif opcion == '4' and hasattr(self, 'menu_ventas'):
-                    self.menu_ventas()
-                elif opcion == '5' and hasattr(self, '_menu_compras'):
-                    self._menu_compras()
-                elif opcion == '6' and hasattr(self, 'menu_inventario'):
-                    self.menu_inventario()
-                elif opcion == '7' and hasattr(self, 'menu_reportes'):
-                    self.menu_reportes()
-                elif opcion == '8' and hasattr(self, 'menu_administracion_usuarios'):
-                    self.menu_administracion_usuarios()
-                elif opcion == '9':
-                    self.cerrar_sesion()
-                    break
-                elif opcion == '0':
-                    if self.confirmar_salida():
-                        return
-                else:
-                    print("❌ Opción no válida")
-                    self.pausa()
-
-    def cerrar_sesion(self):
-        """Cierra la sesión actual"""
-        if hasattr(self, 'trabajador_service') and self.trabajador_service:
-              self.trabajador_service.logout()  # ← BIEN (usa el método existente)
-        print("\n✅ Sesión cerrada correctamente")
-        self.pausa()
     
     def limpiar_pantalla(self):
         """Limpia la pantalla de la consola"""
@@ -252,11 +177,6 @@ class SistemaVentas:
         """Pausa la ejecución hasta que el usuario presione Enter"""
         input(f"\n{self.COLOR_AMARILLO}🔹 Presione Enter para continuar...{self.COLOR_RESET}")
     
-    def confirmar_salida(self):
-        """Confirma si realmente quiere salir del sistema"""
-        respuesta = input("\n¿Está seguro que desea salir? (S/N): ").strip().upper()
-        return respuesta == 'S'
-
     def obtener_tasas_actuales(self):
         """
         Obtiene las tasas de cambio actuales del sistema
@@ -435,13 +355,49 @@ class SistemaVentas:
         # Línea separadora
         print(f"{self.COLOR_AZUL}╠" + "═" * 78 + f"╣{self.COLOR_RESET}")
         
-        # Opciones fijas: Cerrar sesión (siempre 9) y Salir (siempre 0)
-        print(f"{self.COLOR_AZUL}║{self.COLOR_RESET}   🔑 9. Cerrar Sesión{' ' * 53}{self.COLOR_AZUL}║{self.COLOR_RESET}")
-        print(f"{self.COLOR_AZUL}║{self.COLOR_RESET}   ❌ 0. Salir{' ' * 60}{self.COLOR_AZUL}║{self.COLOR_RESET}")
+        # Opción de sesión
+        if usuario:
+            linea_sesion = f"   🔑 8. Cerrar Sesión"
+        else:
+            linea_sesion = f"   🔑 9. Iniciar Sesión"
+        espacios_sesion = 78 - len(linea_sesion)
+        print(f"{self.COLOR_AZUL}║{self.COLOR_RESET}{linea_sesion}{' ' * espacios_sesion}{self.COLOR_AZUL}║{self.COLOR_RESET}")
+        
+        # Opción de salir
+        linea_salir = f"   ❌ 0. Salir"
+        espacios_salir = 78 - len(linea_salir)
+        print(f"{self.COLOR_AZUL}║{self.COLOR_RESET}{linea_salir}{' ' * espacios_salir}{self.COLOR_AZUL}║{self.COLOR_RESET}")
+        
+        # Línea inferior
         print(f"{self.COLOR_AZUL}╚" + "═" * 78 + f"╝{self.COLOR_RESET}")
         print()
         
         return input(f"{self.COLOR_AMARILLO}🔹 Seleccione una opción: {self.COLOR_RESET}").strip()
+        
+        return input(f"{self.COLOR_AMARILLO}🔹 Seleccione una opción: {self.COLOR_RESET}").strip()
+
+    def menu_login(self):
+        """Menú de inicio de sesión con opción de recuperación"""
+        while True:
+            self.mostrar_cabecera("INICIAR SESIÓN")
+            
+            print("1. Iniciar sesión")
+            print("2. ¿Olvidaste tu contraseña?")
+            print("0. Volver")
+            print()
+            
+            opcion = input(f"{self.COLOR_AMARILLO}🔹 Seleccione una opción: {self.COLOR_RESET}").strip()
+            
+            if opcion == '1':
+                self._login_normal()
+                break
+            elif opcion == '2':
+                self._recuperar_contraseña()
+            elif opcion == '0':
+                break
+            else:
+                print("❌ Opción no válida")
+                self.pausa()
     
     def _login_normal(self):
         """Login normal con email y contraseña"""
@@ -4183,60 +4139,79 @@ class SistemaVentas:
         
         self.pausa()
     
-def run(self):
-    """Ejecuta el sistema con login separado"""
-    if not self.conectar_db():
-        return
-    
-    while True:
-        # === PANTALLA DE LOGIN ===
-        while not self.trabajador_service.get_usuario_actual():
-            opcion_login = self.mostrar_login()
-            
-            if opcion_login == '1':
-                self.iniciar_sesion()
-            elif opcion_login == '2':
-                print("\n🔄 Función de recuperación de contraseña en desarrollo")
-                self.pausa()
-            elif opcion_login == '0':
-                if self.confirmar_salida():
-                    return
-            else:
-                print("❌ Opción no válida")
-                self.pausa()
+    def run(self):
+        """Ejecuta el sistema"""
+        if not self.conectar_db():
+            return
         
-        # === MENÚ PRINCIPAL (solo cuando hay usuario) ===
-        while self.trabajador_service.get_usuario_actual():
+        while True:
             opcion = self.mostrar_menu_principal()
             
-            # Opción X: Modificar tasas
+            # NUEVA OPCIÓN PARA MODIFICAR TASAS
             if opcion.upper() == 'X':
                 self._modificar_tasas()
                 continue
             
-            # Opciones del menú según permisos
-            if opcion == '1' and self.rol_service.tiene_permiso('clientes_ver'):
-                self.menu_clientes()
-            elif opcion == '2' and self.rol_service.tiene_permiso('articulos_ver'):
-                self.menu_articulos()
-            elif opcion == '3' and self.rol_service.tiene_permiso('proveedores_ver'):
-                self.menu_proveedores()
-            elif opcion == '4' and self.rol_service.tiene_permiso('ventas_ver'):
-                self.menu_ventas()
-            elif opcion == '5' and self.rol_service.tiene_permiso('compras_ver'):
-                self._menu_compras()
-            elif opcion == '6' and self.rol_service.tiene_permiso('inventario_ver'):
-                self.menu_inventario()
-            elif opcion == '7' and self.rol_service.tiene_permiso('reportes_ventas'):
-                self.menu_reportes()
-            elif opcion == '8' and self.rol_service.tiene_permiso('usuarios_ver'):
-                self.administracion_usuarios()
-            elif opcion == '9':  # Cerrar sesión
-                self.cerrar_sesion()
-                break  # Sale del menú principal y vuelve al login
+            if opcion == '1':
+                if self.rol_service.tiene_permiso('clientes_ver'):
+                    self.menu_clientes()
+                else:
+                    print("❌ No tiene permisos para acceder a clientes")
+                    self.pausa()
+            elif opcion == '2':
+                if self.rol_service.tiene_permiso('articulos_ver'):
+                    self.menu_articulos()
+                else:
+                    print("❌ No tiene permisos para acceder a artículos")
+                    self.pausa()
+            elif opcion == '3':
+                if self.rol_service.tiene_permiso('proveedores_ver'):
+                    self.menu_proveedores()
+                else:
+                    print("❌ No tiene permisos para acceder a proveedores")
+                    self.pausa()
+            elif opcion == '4':
+                if self.rol_service.tiene_permiso('ventas_ver'):
+                    self.menu_ventas()
+                else:
+                    print("❌ No tiene permisos para acceder a ventas")
+                    self.pausa()
+            elif opcion == '5':
+                if self.rol_service.tiene_permiso('compras_ver'):
+                    self._menu_compras()
+                else:
+                    print("❌ No tiene permisos para acceder a compras")
+                    self.pausa()
+            elif opcion == '6':
+                if self.rol_service.tiene_permiso('inventario_ver'):
+                    self.menu_inventario()
+                else:
+                    print("❌ No tiene permisos para acceder a inventario")
+                    self.pausa()
+            elif opcion == '7':
+                if self.rol_service.tiene_permiso('reportes_ventas'):
+                    self.menu_reportes()
+                else:
+                    print("❌ No tiene permisos para acceder a reportes")
+                    self.pausa()
+            elif opcion == '8':
+                if self.trabajador_service.get_usuario_actual():
+                    # Si ya tiene sesión, cierra sesión
+                    self.trabajador_service.logout()
+                    print(f"{self.COLOR_VERDE}✅ Sesión cerrada{self.COLOR_RESET}")
+                    self.pausa()
+                else:
+                    # Si no tiene sesión, inicia sesión
+                    self.menu_login()
+            elif opcion == '9':
+                if self.trabajador_service.get_usuario_actual() and self.rol_service.tiene_permiso('usuarios_ver'):
+                    self.menu_administracion_usuarios()
+                else:
+                    print("❌ No tiene permisos para acceder a usuarios")
+                    self.pausa()
             elif opcion == '0':
-                if self.confirmar_salida():
-                    return
+                print(f"\n{self.COLOR_VERDE}👋 ¡Hasta luego!{self.COLOR_RESET}")
+                break
             else:
                 print("❌ Opción no válida")
                 self.pausa()
@@ -6318,4 +6293,4 @@ def run(self):
 
 if __name__ == "__main__":
     sistema = SistemaVentas()
-    sistema.menu_login()
+    sistema.run()

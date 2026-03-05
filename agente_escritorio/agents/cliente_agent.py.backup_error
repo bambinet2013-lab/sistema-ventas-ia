@@ -1,0 +1,103 @@
+"""
+Agente de Clientes - Versión corregida
+"""
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from loguru import logger
+from capa_negocio.cliente_service import ClienteService
+from capa_datos.cliente_repo import ClienteRepositorio
+import pyodbc
+
+class ClienteAgent:
+    """Agente que maneja clientes"""
+    
+    def __init__(self):
+        logger.info("✅ ClienteAgent inicializado")
+    
+    def _get_connection(self):
+        conn_str = (
+            "DRIVER={ODBC Driver 18 for SQL Server};"
+            "SERVER=localhost,1433;"
+            "DATABASE=SistemaVentas;"
+            "UID=sa;"
+            "PWD=Santi07.;"
+            "TrustServerCertificate=yes;"
+        )
+        return pyodbc.connect(conn_str)
+    
+    def _get_service(self):
+        conn = self._get_connection()
+        repo = ClienteRepositorio(conn)
+        service = ClienteService(repo)
+        return service, conn
+    
+    def buscar_por_documento(self, documento):
+        """
+        Busca un cliente por su documento completo (V12345678)
+        """
+        try:
+            if not documento or len(documento) < 2:
+                return None
+            
+            tipo = documento[0].upper()
+            numero = documento[1:]
+            
+            if tipo not in ['V', 'E', 'J', 'G', 'C']:
+                return None
+            
+            service, conn = self._get_service()
+            resultado = service.buscar_por_documento(tipo, numero)
+            conn.close()
+            
+            return resultado
+            
+        except Exception as e:
+            logger.error(f"❌ Error: {e}")
+            return None
+    
+    def obtener_consumidor_final(self):
+        """
+        Obtiene el ID del cliente CONSUMIDOR FINAL
+        """
+        try:
+            # Buscar directamente en la base de datos
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT idcliente FROM cliente 
+                WHERE tipo_documento = 'CF' AND num_documento = ''
+            """)
+            
+            row = cursor.fetchone()
+            if row:
+                logger.info(f"✅ Consumidor Final ID: {row[0]}")
+                conn.close()
+                return row[0]
+            
+            # Si no existe, lo creamos
+            logger.warning("⚠️ Creando Consumidor Final...")
+            
+            # Insertar directamente
+            cursor.execute("""
+                INSERT INTO cliente (nombre, apellidos, tipo_documento, num_documento)
+                OUTPUT INSERTED.idcliente
+                VALUES ('CONSUMIDOR', 'FINAL', 'CF', '')
+            """)
+            
+            row = cursor.fetchone()
+            conn.commit()
+            idcliente = row[0] if row else None
+            conn.close()
+            
+            logger.info(f"✅ Consumidor Final creado ID: {idcliente}")
+            return idcliente
+            
+        except Exception as e:
+            logger.error(f"❌ Error: {e}")
+            return None
+    
+    def cerrar(self):
+        pass
