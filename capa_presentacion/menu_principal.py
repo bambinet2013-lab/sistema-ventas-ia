@@ -88,6 +88,23 @@ class SistemaVentas:
         self.ingreso_service = None
         self.auditoria_service = None
     
+    def _configurar_medios_pago(self):
+        """Configuración de medios de pago (Cashea, etc.)"""
+        self.mostrar_cabecera("CONFIGURACIÓN DE MEDIOS DE PAGO")
+        
+        try:
+            from ui.config_medios_pago import ConfigMediosPagoDialog
+            dialog = ConfigMediosPagoDialog(self)
+            dialog.show()
+        except ImportError as e:
+            print(f"\n{self.COLOR_ROJO}❌ Error: No se encuentra el módulo de configuración{self.COLOR_RESET}")
+            print(f"Detalle: {e}")
+            print(f"\n{self.COLOR_AMARILLO}El archivo ui/config_medios_pago.py debe ser creado.{self.COLOR_RESET}")
+            self.pausa()
+        except Exception as e:
+            print(f"\n{self.COLOR_ROJO}❌ Error inesperado: {e}{self.COLOR_RESET}")
+            self.pausa()   
+    
     def conectar_db(self):
         """Establece conexión con la base de datos"""
         self.conn = self.db.conectar()
@@ -582,29 +599,35 @@ class SistemaVentas:
     
     @requiere_permiso('usuarios_ver')
     def menu_administracion_usuarios(self):
-        """Menú de administración de usuarios"""
+        """Menú de administración de usuarios y configuración"""
         while True:
-            self.mostrar_cabecera("ADMINISTRACIÓN DE USUARIOS")
+            self.limpiar_pantalla()
+            print("\n" + "="*60)
+            print("             ADMINISTRACIÓN DEL SISTEMA")
+            print("="*60)
             print("1. Listar usuarios")
             print("2. Crear nuevo usuario")
-            print("3. Ver detalle de usuario")
-            print("4. Editar usuario")
-            print("5. Eliminar usuario")
+            print("3. Editar usuario")
+            print("4. Eliminar usuario")
+            print("5. Gestionar roles")
+            print("6. Configurar Medios de Pago")
             print("0. Volver")
-            print()
-            
-            opcion = input(f"{self.COLOR_AMARILLO}🔹 Seleccione una opción: {self.COLOR_RESET}").strip()
-            
+            print("="*60)
+
+            opcion = input(f"\n{self.COLOR_AMARILLO}🔹 Seleccione: {self.COLOR_RESET}").strip()
+
             if opcion == '1':
                 self._listar_usuarios()
             elif opcion == '2':
                 self._crear_usuario()
             elif opcion == '3':
-                self._ver_usuario()
-            elif opcion == '4':
                 self._editar_usuario()
-            elif opcion == '5':
+            elif opcion == '4':
                 self._eliminar_usuario()
+            elif opcion == '5':
+                self._gestionar_roles()
+            elif opcion == '6':
+                self._configurar_medios_pago()
             elif opcion == '0':
                 break
             else:
@@ -6319,3 +6342,4 @@ def run(self):
 if __name__ == "__main__":
     sistema = SistemaVentas()
     sistema.menu_login()
+    

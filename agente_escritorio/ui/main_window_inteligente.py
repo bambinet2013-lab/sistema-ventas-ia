@@ -230,6 +230,7 @@ class MainWindowInteligente:
         self.actualizar_tasas()
         self.actualizar_historial()
         print("✅ Interfaz lista\n")
+        self.actualizar_opciones_pago()
         
     def setup_styles(self):
         self.bg_color = "#f0f0f0"
@@ -324,6 +325,37 @@ class MainWindowInteligente:
         
         self.tree_carrito.bind('<Double-1>', self.quitar_producto)
         
+                # === FORMAS DE PAGO ===
+        pago_frame = tk.LabelFrame(left_frame, text=" Formas de Pago ", 
+                                   font=('Helvetica', 10, 'bold'), bg='white')
+        pago_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Frame interno para los botones
+        botones_pago = tk.Frame(pago_frame, bg='white')
+        botones_pago.pack(pady=5)
+        
+        # Botones de pago
+        self.btn_efectivo = tk.Button(botones_pago, text="Efectivo", 
+                                      bg='#27ae60', fg='white', width=12,
+                                      command=lambda: self.procesar_pago('EFECTIVO'))
+        self.btn_efectivo.pack(side='left', padx=5)
+        
+        self.btn_transferencia = tk.Button(botones_pago, text="Transferencia", 
+                                          bg='#3498db', fg='white', width=12,
+                                          command=lambda: self.procesar_pago('TRANSFERENCIA'))
+        self.btn_transferencia.pack(side='left', padx=5)
+        
+        self.btn_tarjeta = tk.Button(botones_pago, text="Tarjeta", 
+                                    bg='#f39c12', fg='white', width=12,
+                                    command=lambda: self.procesar_pago('TARJETA'))
+        self.btn_tarjeta.pack(side='left', padx=5)
+        
+        # Botón Cashea (inicialmente visible si está activo)
+        self.btn_cashea = tk.Button(botones_pago, text="Cashea", 
+                                   bg='#9b59b6', fg='white', width=12,
+                                   command=self.pagar_con_cashea)
+        # La visibilidad se controla con actualizar_opciones_pago()
+        
         # Totales
         totales_frame = tk.Frame(left_frame, bg='white', relief='ridge', bd=2)
         totales_frame.pack(fill='x', padx=10, pady=10)
@@ -392,6 +424,14 @@ class MainWindowInteligente:
         else:
             self.lbl_cliente_info.config(text="Cliente: No seleccionado")
             self.venta_agent.es_consumidor_final = False
+
+    def actualizar_opciones_pago(self):
+        """Actualiza las opciones de pago según configuración"""
+        if hasattr(self, 'btn_cashea'):
+            if hasattr(self.venta_agent, 'cashea_activo') and self.venta_agent.cashea_activo():
+                self.btn_cashea.pack(side='left', padx=5)
+            else:
+                self.btn_cashea.pack_forget()
     
     def abrir_buscador(self):
         print("\n" + "="*60)
@@ -494,6 +534,49 @@ class MainWindowInteligente:
             else:
                 print(f"❌ Error: {resultado.get('error')}")
                 messagebox.showerror("Error", resultado.get('error'))
+
+    def procesar_pago(self, tipo_pago):
+        """Procesa el pago según el tipo seleccionado"""
+        if not self.venta_agent.carrito:
+            messagebox.showwarning("Advertencia", "No hay productos en el carrito")
+            return
+        
+        if tipo_pago == 'EFECTIVO':
+            self.procesar_venta()
+        elif tipo_pago == 'TRANSFERENCIA':
+            messagebox.showinfo("Transferencia", "Próximamente: Integración con transferencias")
+        elif tipo_pago == 'TARJETA':
+            messagebox.showinfo("Tarjeta", "Próximamente: Integración con tarjetas")
+        else:
+            self.procesar_venta()
+
+    def pagar_con_cashea(self):
+        """Inicia el flujo de pago con Cashea"""
+        if not self.venta_agent.carrito:
+            messagebox.showwarning("Advertencia", "No hay productos en el carrito")
+            return
+        
+        totales = self.venta_agent.calcular_totales()
+        
+        # Verificar monto mínimo
+        if hasattr(self.venta_agent, 'cashea_agent'):
+            info = self.venta_agent.cashea_agent.obtener_info()
+            monto_minimo = info.get('monto_minimo', 25.0)
+            
+            if totales['total_usd'] < monto_minimo:
+                messagebox.showwarning("Cashea", f"El monto mínimo para Cashea es ${monto_minimo}")
+                return
+        
+        # Simular autorización (luego se conectará a API real)
+        respuesta = messagebox.askyesno(
+            "Confirmar pago con Cashea",
+            f"Total: ${totales['total_usd']:.2f}\n\n"
+            f"El cliente pagará una inicial y el resto en cuotas.\n"
+            f"¿Desea continuar?"
+        )
+        
+        if respuesta:
+            messagebox.showinfo("Cashea", "Funcionalidad en desarrollo\n\nPróximamente: Integración con API real")
     
     def actualizar_historial(self):
         ventas = self.venta_agent.obtener_historial(20)

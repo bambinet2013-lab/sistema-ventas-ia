@@ -1,0 +1,101 @@
+    def _mostrar_resultados_con_accion(self, resultados, accion):
+        """Muestra resultados y ejecuta acción según selección"""
+        self.mostrar_cabecera(f"🔍 RESULTADOS DE BÚSQUEDA")
+        
+        print(f"\n{self.COLOR_VERDE}{'ID':<5} {'CÓDIGO':<15} {'NOMBRE':<30} {'CATEGORÍA':<20} {'PRECIO $':<10} {'STOCK':<10}{self.COLOR_RESET}")
+        print(f"{self.COLOR_CYAN}{'-'*100}{self.COLOR_RESET}")
+        
+        for a in resultados:
+            id_art = a.get('idarticulo', '')
+            # CORREGIDO: usar 'codigo' en lugar de 'codigo_barras'
+            codigo = a.get('codigo', '')
+            if not codigo:
+                codigo = a.get('plu', '') or 'S/C'
+            codigo = codigo[:14]
+            
+            nombre = a.get('nombre', '')[:29]
+            categoria = a.get('categoria_nombre', a.get('categoria', 'Sin categoría'))[:19]
+            precio = a.get('precio_venta', 0)
+            stock = a.get('stock_actual', 0)
+            
+            # Formatear precio
+            if precio == int(precio):
+                precio_str = f"${int(precio)}"
+            else:
+                precio_str = f"${precio:.2f}"
+            
+            print(f"{id_art:<5} {codigo:<15} {nombre:<30} {categoria:<20} {precio_str:<10} {stock} und")
+        
+        print(f"{self.COLOR_CYAN}{'-'*100}{self.COLOR_RESET}")
+        print(f"\n{self.COLOR_AMARILLO}Seleccione el ID del artículo que desea {accion}:{self.COLOR_RESET}")
+        print(f"  [0] Cancelar")
+        print(f"  [V] Volver a búsqueda")
+        
+        opcion = input(f"\n{self.COLOR_AMARILLO}ID: {self.COLOR_RESET}").strip().upper()
+        
+        if opcion == 'V':
+            # Volver al menú de búsqueda según la acción
+            if accion == 'editar':
+                self._buscar_articulo_para_editar()
+            elif accion == 'precio':
+                self._buscar_articulo_para_precio()
+            elif accion == 'detalle':
+                self._buscar_articulo_para_detalle()
+            return
+        elif opcion == '0':
+            return
+        
+        try:
+            id_seleccionado = int(opcion)
+            
+            # Verificar que el ID está en resultados
+            valido = False
+            for a in resultados:
+                if a.get('idarticulo') == id_seleccionado:
+                    valido = True
+                    break
+            
+            if not valido:
+                print(f"{self.COLOR_ROJO}❌ ID no válido o no está en los resultados{self.COLOR_RESET}")
+                self.pausa()
+                # Volver a mostrar los resultados
+                self._mostrar_resultados_con_accion(resultados, accion)
+                return
+            
+            # Ejecutar acción correspondiente
+            if accion == 'editar':
+                self._editar_categoria_nombre(id_seleccionado)
+            elif accion == 'precio':
+                self._editar_precio_articulo(id_seleccionado)
+            elif accion == 'detalle':
+                self._ver_detalle_articulo(id_seleccionado)
+                
+        except ValueError:
+            print(f"{self.COLOR_ROJO}❌ Valor inválido{self.COLOR_RESET}")
+            self.pausa()
+            # Volver a mostrar los resultados
+            self._mostrar_resultados_con_accion(resultados, accion)
+
+    def _configurar_medios_pago(self):
+        """Configuración de medios de pago (Cashea, etc.)"""
+        self.mostrar_cabecera("CONFIGURACIÓN DE MEDIOS DE PAGO")
+        
+        try:
+            from ui.config_medios_pago import ConfigMediosPagoDialog
+            dialog = ConfigMediosPagoDialog(self)
+            dialog.show()
+        except ImportError as e:
+            print(f"\n{self.COLOR_ROJO}❌ Error: No se encuentra el módulo de configuración{self.COLOR_RESET}")
+            print(f"Detalle: {e}")
+            print(f"\n{self.COLOR_AMARILLO}El archivo ui/config_medios_pago.py debe ser creado.{self.COLOR_RESET}")
+            self.pausa()
+        except Exception as e:
+            print(f"\n{self.COLOR_ROJO}❌ Error inesperado: {e}{self.COLOR_RESET}")
+            self.pausa()  
+
+        self.db.cerrar()
+
+if __name__ == "__main__":
+    sistema = SistemaVentas()
+    sistema.menu_login()
+    

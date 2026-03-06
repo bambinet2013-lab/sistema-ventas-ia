@@ -20,12 +20,22 @@ class VentaAgent:
         self.cliente_agent = ClienteAgent()
         self.articulo_agent = ArticuloAgent()
         
+        # NUEVO: Inicializar agente de Cashea
+        from agente_escritorio.agents.cashea_agent import CasheaAgent
+        self.cashea_agent = CasheaAgent()
+        
         self.carrito = []
         self.cliente_actual = None
         self.es_consumidor_final = True
         self.tasa_cambio = self._obtener_tasa_cambio()
         
         logger.info("✅ VentaAgent inicializado")
+    
+    def cashea_activo(self):
+        """Retorna True si Cashea está activo y configurado"""
+        if hasattr(self, 'cashea_agent'):
+            return self.cashea_agent.esta_activo()
+        return False    
     
     def _obtener_tasa_cambio(self):
         try:
