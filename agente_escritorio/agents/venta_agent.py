@@ -298,12 +298,13 @@ class VentaAgent:
     def calcular_totales_con_impuestos(self):
         """
         Calcula los totales de la venta desglosados fiscalmente.
-        AHORA SÍ: separa correctamente exentos y gravados, y calcula total con IVA.
+        - exento: suma de productos con letra 'E'
+        - base_gravada_usd: suma de productos gravados (precio con IVA incluido)
+        - iva_usd: 16% de la base_gravada_usd
+        - total_con_iva: exento + base_gravada_usd + iva_usd
         """
         exento = 0.0
         base_gravada = 0.0
-        iva_total = 0.0
-        total_con_iva = 0.0
         
         for item in self.carrito:
             precio_unitario = item['precio_unitario']
@@ -315,34 +316,23 @@ class VentaAgent:
             
             if letra == 'E':  # Exento
                 exento += item_total
-                total_con_iva += item_total
-                
-            elif letra == 'G':  # General 16%
+            else:  # Gravado (G, R, A)
                 base_gravada += item_total
-                iva = item_total * 0.16  # IVA sobre el precio con IVA incluido
-                iva_total += iva
-                total_con_iva += item_total + iva  # Precio + IVA
-                
-            elif letra == 'R':  # Reducida 8%
-                base_gravada += item_total
-                iva = item_total * 0.08
-                iva_total += iva
-                total_con_iva += item_total + iva
-                
-            elif letra == 'A':  # Adicional 31%
-                base_gravada += item_total
-                iva = item_total * 0.31
-                iva_total += iva
-                total_con_iva += item_total + iva
+        
+        # Calcular IVA sobre la base gravada
+        iva = base_gravada * 0.16
+        
+        # Total con IVA
+        total = exento + base_gravada + iva
         
         resultado = {
             'exento': round(exento, 2),
             'base_gravada_usd': round(base_gravada, 2),
-            'iva_usd': round(iva_total, 2),
-            'total_con_iva': round(total_con_iva, 2)
+            'iva_usd': round(iva, 2),
+            'total_con_iva': round(total, 2)
         }
         
-        logger.info(f"🧮 Cálculo fiscal CORREGIDO: {resultado}")
+        logger.info(f"🧮 Cálculo fiscal: {resultado}")
         return resultado
     
     def _generar_numero_comprobante(self):
