@@ -219,6 +219,10 @@ class MainWindowInteligente:
         self.articulo_agent = ArticuloAgent()
         print("✅ Agentes inicializados")
         
+        # Inicializar sistema de notificaciones
+        if hasattr(self.venta_agent, 'cashea_agent'):
+            self.venta_agent.cashea_agent.crear_endpoint_notificacion()
+                    
         # Estado
         self.carrito_items = []
         self.cliente_actual = None
@@ -230,7 +234,9 @@ class MainWindowInteligente:
         self.actualizar_tasas()
         self.actualizar_historial()
         print("✅ Interfaz lista\n")
-        self.actualizar_opciones_pago()
+        self.actualizar_opciones_pago() 
+        self.actualizar_notificaciones()
+        self.setup_programador_shortcut()
         
     def setup_styles(self):
         self.bg_color = "#f0f0f0"
@@ -250,8 +256,29 @@ class MainWindowInteligente:
         tk.Label(top_frame, text="SISTEMA DE VENTAS INTELIGENTE", 
                 fg='white', bg=self.primary_color,
                 font=('Helvetica', 16, 'bold')).pack(side='left', padx=20, pady=10)
+
+        # 👇 NUEVO: Frame para la campanita y usuario (AGREGA ESTO)
+        right_frame = tk.Frame(top_frame, bg=self.primary_color)
+        right_frame.pack(side='right', padx=20)
         
-        # === BARRA DE ESTADO ===
+        # Campanita de notificaciones
+        self.btn_notificaciones = tk.Button(right_frame, text="🔔", 
+                                           font=('Helvetica', 14),
+                                           bg=self.primary_color, fg='white',
+                                           bd=0, command=self.mostrar_notificaciones)
+        self.btn_notificaciones.pack(side='left', padx=10)
+        
+        # Label para contador (inicialmente invisible)
+        self.lbl_notif_count = tk.Label(right_frame, text="", 
+                                       bg='red', fg='white',
+                                       font=('Helvetica', 8))
+        self.lbl_notif_count.place_configure(relx=0.7, rely=0.1)
+        
+        # Usuario
+        tk.Label(right_frame, text=f"👤 {self.usuario.nombre}", 
+                fg='white', bg=self.primary_color).pack(side='left', padx=5)
+      
+         # === BARRA DE ESTADO ===
         status_frame = tk.Frame(self.root, bg=self.secondary_color, height=30)
         status_frame.pack(fill='x')
         status_frame.pack_propagate(False)
@@ -300,22 +327,27 @@ class MainWindowInteligente:
                                height=2)
         btn_buscar.pack(fill='x', padx=20, pady=10)
         
-        # Carrito
+        # Carrito de compras
         carrito_frame = tk.LabelFrame(left_frame, text=" Carrito de Compras ", font=('Helvetica', 10, 'bold'), bg='white')
         carrito_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-        columns = ('Cant', 'Producto', 'Precio $', 'Subtotal $')
+        # Columnas: Cant | Producto | Precio $ | Precio Bs. | Subtotal Bs.
+        columns = ('Cant', 'Producto', 'Precio $', 'Precio Bs.', 'Subtotal Bs.')
         self.tree_carrito = ttk.Treeview(carrito_frame, columns=columns, show='headings', height=8)
         
+        # Configurar encabezados
         self.tree_carrito.heading('Cant', text='Cant')
         self.tree_carrito.heading('Producto', text='Producto')
         self.tree_carrito.heading('Precio $', text='Precio $')
-        self.tree_carrito.heading('Subtotal $', text='Subtotal $')
+        self.tree_carrito.heading('Precio Bs.', text='Precio Bs.')
+        self.tree_carrito.heading('Subtotal Bs.', text='Subtotal Bs.')
         
-        self.tree_carrito.column('Cant', width=60)
-        self.tree_carrito.column('Producto', width=350)
-        self.tree_carrito.column('Precio $', width=80)
-        self.tree_carrito.column('Subtotal $', width=100)
+        # Configurar anchos de columna
+        self.tree_carrito.column('Cant', width=50)
+        self.tree_carrito.column('Producto', width=300)
+        self.tree_carrito.column('Precio $', width=70)
+        self.tree_carrito.column('Precio Bs.', width=80)
+        self.tree_carrito.column('Subtotal Bs.', width=90)
         
         scrollbar = ttk.Scrollbar(carrito_frame, orient='vertical', command=self.tree_carrito.yview)
         self.tree_carrito.configure(yscrollcommand=scrollbar.set)
@@ -337,7 +369,7 @@ class MainWindowInteligente:
         # Botones de pago
         self.btn_efectivo = tk.Button(botones_pago, text="Efectivo", 
                                       bg='#27ae60', fg='white', width=12,
-                                      command=lambda: self.procesar_pago('EFECTIVO'))
+                                      command=self.pagar_efectivo) 
         self.btn_efectivo.pack(side='left', padx=5)
         
         self.btn_transferencia = tk.Button(botones_pago, text="Transferencia", 
@@ -347,7 +379,7 @@ class MainWindowInteligente:
         
         self.btn_tarjeta = tk.Button(botones_pago, text="Tarjeta", 
                                     bg='#f39c12', fg='white', width=12,
-                                    command=lambda: self.procesar_pago('TARJETA'))
+                                     command=self.pagar_tarjeta)
         self.btn_tarjeta.pack(side='left', padx=5)
         
         # Botón Cashea (inicialmente visible si está activo)
@@ -355,31 +387,41 @@ class MainWindowInteligente:
                                    bg='#9b59b6', fg='white', width=12,
                                    command=self.pagar_con_cashea)
         # La visibilidad se controla con actualizar_opciones_pago()
-        
+         
+        self.btn_simular = tk.Button(botones_pago, text="🔔 Simular", 
+                                    bg='#e67e22', fg='white', width=10,
+                                    command=self.simular_notificacion_cashea)
+        self.btn_simular.pack(side='left', padx=5)         
+         
         # Totales
         totales_frame = tk.Frame(left_frame, bg='white', relief='ridge', bd=2)
         totales_frame.pack(fill='x', padx=10, pady=10)
         
-        totales_inner = tk.Frame(totales_frame, bg='white')
-        totales_inner.pack(anchor='e', padx=20, pady=10)
+        self.totales_inner = tk.Frame(totales_frame, bg='white')
+        self.totales_inner.pack(anchor='e', padx=20, pady=10)
         
-        self.lbl_subtotal = tk.Label(totales_inner, text="Subtotal: $0.00",
-                                    bg='white', font=('Helvetica', 10))
+        self.lbl_subtotal = tk.Label(self.totales_inner, text="SUBTTL Bs.0",
+                                    bg='white', font=('Helvetica', 10, 'bold'))
         self.lbl_subtotal.pack(anchor='e')
         
-        self.lbl_iva = tk.Label(totales_inner, text="IVA: $0.00",
+        # Labels para desglose
+        self.lbl_exento = tk.Label(self.totales_inner, text="Exento: Bs.0",
+                                   bg='white', font=('Helvetica', 10))
+        self.lbl_exento.pack(anchor='e')
+        
+        self.lbl_base = tk.Label(self.totales_inner, text="Base G: Bs.0",
+                                bg='white', font=('Helvetica', 10))
+        self.lbl_base.pack(anchor='e')
+        
+        self.lbl_iva = tk.Label(self.totales_inner, text="IVA: Bs.0",
                                bg='white', font=('Helvetica', 10))
         self.lbl_iva.pack(anchor='e')
         
-        self.lbl_total_usd = tk.Label(totales_inner, text="TOTAL USD: $0.00",
+        self.lbl_total_bs = tk.Label(self.totales_inner, text="TOTAL: Bs.0",
                                      bg='white', font=('Helvetica', 14, 'bold'))
-        self.lbl_total_usd.pack(anchor='e', pady=5)
+        self.lbl_total_bs.pack(anchor='e', pady=5)
         
-        self.lbl_total_bs = tk.Label(totales_inner, text="TOTAL Bs: Bs.0.00",
-                                    bg='white', font=('Helvetica', 12))
-        self.lbl_total_bs.pack(anchor='e')
-        
-        # Botón procesar
+         # Botón procesar
         btn_procesar = tk.Button(left_frame, text="💰 PROCESAR VENTA 💰", 
                                 command=self.procesar_venta,
                                 bg=self.success_color, fg='white',
@@ -490,50 +532,108 @@ class MainWindowInteligente:
             print("➖ Producto quitado del carrito")
     
     def actualizar_carrito(self):
+        """Actualiza la vista del carrito con formato venezolano"""
         print("🔄 Actualizando vista del carrito...")
+        
+        # Limpiar tree
         for item in self.tree_carrito.get_children():
             self.tree_carrito.delete(item)
         
+        # Configurar tags para colores según letra fiscal
+        self.tree_carrito.tag_configure('exento', background='#e8f5e8')  # Verde claro
+        self.tree_carrito.tag_configure('gravado', background='#fff3e0')  # Naranja claro
+        
+        # Obtener tasa de cambio
+        tasa = self.venta_agent.tasa_cambio
+        subtotal_bs_total = 0.0
+        
+        # Agregar productos al carrito
         for item in self.venta_agent.carrito:
+            letra = item.get('letra', '?')
+            nombre_con_letra = f"{item['nombre']} ({letra})"
+            
+            # Calcular montos
+            precio_usd = item['precio_unitario']
+            precio_bs = precio_usd * tasa
+            subtotal_bs = item['subtotal'] * tasa
+            subtotal_bs_total += subtotal_bs
+            
+            # Determinar tag para color según letra
+            tag = 'exento' if letra == 'E' else 'gravado'
+            
+            # Formatear precios
+            precio_usd_str = f"${precio_usd:.2f}".replace('.', ',')
+            precio_bs_str = f"Bs.{precio_bs:.0f}".replace('.', ',')
+            subtotal_bs_str = f"Bs.{subtotal_bs:.0f}".replace('.', ',')
+            
+            # Insertar en el carrito
             self.tree_carrito.insert('', 'end', values=(
                 item['cantidad'],
-                item['nombre'],
-                f"${item['precio_unitario']:.2f}",
-                f"${item['subtotal']:.2f}"
-            ))
+                nombre_con_letra,
+                precio_usd_str,
+                precio_bs_str,
+                subtotal_bs_str
+            ), tags=(tag,))
         
-        totales = self.venta_agent.calcular_totales()
-        self.lbl_subtotal.config(text=f"Subtotal: ${totales['subtotal_usd']:.2f}")
-        self.lbl_iva.config(text=f"IVA: ${totales['iva_usd']:.2f}")
-        self.lbl_total_usd.config(text=f"TOTAL USD: ${totales['total_usd']:.2f}")
-        self.lbl_total_bs.config(text=f"TOTAL Bs: Bs.{totales['total_bs']:.2f}")
-        print(f"💰 Totales actualizados: ${totales['total_usd']:.2f}")
+        # Calcular totales fiscales con la nueva lógica
+        totales_usd = self.venta_agent.calcular_totales_con_impuestos()
+        tasa = self.venta_agent.tasa_cambio
+        
+        # Convertir a Bs.
+        exento_bs = totales_usd['exento'] * tasa
+        base_gravada_bs = totales_usd['base_gravada_usd'] * tasa
+        iva_bs = base_gravada_bs * 0.16  # IVA = Base gravada Bs. × 16%
+        total_bs = totales_usd['total_con_iva'] * tasa  # Total con IVA incluido
+        
+        # Calcular subtotal (sin IVA) para mostrarlo
+        subtotal_sin_iva_bs = exento_bs + base_gravada_bs
+        
+        # Actualizar SUBTTL (subtotal sin IVA)
+        self.lbl_subtotal.config(text=f"SUBTTL Bs.{subtotal_sin_iva_bs:.0f}".replace('.', ','))
+        
+        # Actualizar desglose fiscal
+        if hasattr(self, 'lbl_exento') and self.lbl_exento:
+            self.lbl_exento.config(text=f"Exento: Bs.{exento_bs:.0f}".replace('.', ','))
+        
+        if hasattr(self, 'lbl_base') and self.lbl_base:
+            self.lbl_base.config(text=f"Base G: Bs.{base_gravada_bs:.0f}".replace('.', ','))
+        
+        self.lbl_iva.config(text=f"IVA: Bs.{iva_bs:.0f}".replace('.', ','))
+        self.lbl_total_bs.config(text=f"TOTAL: Bs.{total_bs:.0f}".replace('.', ','))
+        
+        print(f"📊 SUBTTL: Bs.{subtotal_sin_iva_bs:.0f}, Exento: {exento_bs:.0f}, Base G: {base_gravada_bs:.0f}, IVA: {iva_bs:.0f}, TOTAL: {total_bs:.0f}")
     
-    def procesar_venta(self):
+    def procesar_venta(self, tipo_pago='EFECTIVO', pago_info=None):
+        """Procesa la venta actual con información de pago"""
         if not self.venta_agent.carrito:
             messagebox.showwarning("Advertencia", "No hay productos en el carrito")
             return
         
-        totales = self.venta_agent.calcular_totales()
+        # Procesar venta
+        resultado = self.venta_agent.procesar_venta(tipo_pago=tipo_pago, pago_info=pago_info)
         
-        respuesta = messagebox.askyesno(
-            "Confirmar Venta",
-            f"Total: ${totales['total_usd']:.2f} (Bs. {totales['total_bs']:.2f})\n"
-            f"¿Procesar venta?"
-        )
-        
-        if respuesta:
-            print("\n💰 Procesando venta...")
-            resultado = self.venta_agent.procesar_venta()
+        if resultado['success']:
+            # Construir mensaje detallado
+            mensaje = f"✅ Venta #{resultado['idventa']} procesada\n\n"
+            mensaje += f"💰 Total: ${resultado['totales']['usd']:.2f} (Bs.{resultado['totales']['bs']:.2f})\n"
             
-            if resultado['success']:
-                print(f"✅ Venta #{resultado['idventa']} procesada")
-                messagebox.showinfo("Éxito", f"Venta #{resultado['idventa']} procesada")
-                self.actualizar_carrito()
-                self.actualizar_historial()
-            else:
-                print(f"❌ Error: {resultado.get('error')}")
-                messagebox.showerror("Error", resultado.get('error'))
+            # Mostrar IGTF si se aplicó (revisar en pago_info)
+            if pago_info and pago_info.get('igtf_aplicado', False):
+                igtf_porcentaje = pago_info.get('igtf_porcentaje', 3)
+                igtf_monto = pago_info.get('igtf_monto', 0)
+                mensaje += f"📊 IGTF ({igtf_porcentaje}%): +${igtf_monto:.2f}\n"
+            
+            # Mostrar comisión si existe
+            if resultado['totales'].get('comision', 0) > 0:
+                mensaje += f"💳 Comisión: -${resultado['totales']['comision']:.2f}\n"
+                mensaje += f"🏦 Neto negocio: ${resultado['totales']['neto']:.2f}\n"
+            
+            messagebox.showinfo("✅ Éxito", mensaje)
+            
+            self.actualizar_carrito()
+            self.actualizar_historial()
+        else:
+            messagebox.showerror("❌ Error", resultado.get('error', 'Error desconocido'))
 
     def procesar_pago(self, tipo_pago):
         """Procesa el pago según el tipo seleccionado"""
@@ -547,8 +647,119 @@ class MainWindowInteligente:
             messagebox.showinfo("Transferencia", "Próximamente: Integración con transferencias")
         elif tipo_pago == 'TARJETA':
             messagebox.showinfo("Tarjeta", "Próximamente: Integración con tarjetas")
+        elif tipo_pago == 'CASHEA':
+            self.pagar_con_cashea()
         else:
             self.procesar_venta()
+
+    def pagar_efectivo(self):
+        """Inicia el flujo de pago en efectivo."""
+        if not self.venta_agent.carrito:
+            messagebox.showwarning("Advertencia", "No hay productos en el carrito")
+            return
+        
+        # Obtener totales fiscales con la nueva estructura
+        totales_usd = self.venta_agent.calcular_totales_con_impuestos()
+        tasa = self.venta_agent.tasa_cambio
+        
+        # Calcular montos totales en Bs. y USD (con IVA incluido)
+        total_bs = totales_usd['total_con_iva'] * tasa  # ← ESTE ES EL CORRECTO (2088)
+        total_usd = totales_usd['total_con_iva']        # ← 5.22
+        
+        # Obtener configuración de la empresa
+        config_empresa = self.venta_agent.obtener_configuracion_empresa(1)
+        
+        # Mostrar diálogo de pago en efectivo
+        from ui.dialogos.pago_efectivo import PagoEfectivoDialog
+        dialog = PagoEfectivoDialog(
+            self.root,
+            total_bs=total_bs,              # ← AHORA PASA 2088
+            total_usd=total_usd,            # ← 5.22
+            tasa_cambio=tasa,
+            config_empresa=config_empresa,
+            totales_fiscales=totales_usd
+        )
+        resultado = dialog.show()
+        
+        if resultado:
+            logger.info(f"💰 Pago en efectivo procesado: {resultado}")
+            
+            # Preparar información de pago con todos los datos
+            pago_info = {
+                'moneda': resultado['moneda'],
+                'monto_recibido': resultado['monto_recibido'],
+                'vuelto': resultado['vuelto'],
+                'totales_fiscales': totales_usd
+            }
+            
+            # Agregar información adicional según la moneda
+            if 'vuelto_usd' in resultado:
+                pago_info['vuelto_usd'] = resultado['vuelto_usd']
+                logger.info(f"   Vuelto en Bs.: {resultado['vuelto']:.2f} (${resultado['vuelto_usd']:.2f})")
+            elif 'vuelto_bs' in resultado:
+                pago_info['vuelto_bs'] = resultado['vuelto_bs']
+                logger.info(f"   Vuelto en USD: ${resultado['vuelto']:.2f} (Bs.{resultado['vuelto_bs']:.2f})")
+            
+            # Determinar tipo de pago según moneda
+            tipo_pago = 'EFECTIVO_BS' if resultado['moneda'] == 'BS' else 'EFECTIVO_USD'
+            
+            # Procesar la venta
+            self.procesar_venta(tipo_pago=tipo_pago, pago_info=pago_info)
+
+    def pagar_tarjeta(self):
+        """Inicia el flujo de pago con tarjeta (soporta IGTF y comisiones)."""
+        if not self.venta_agent.carrito:
+            messagebox.showwarning("Advertencia", "No hay productos en el carrito")
+            return
+        
+        # Obtener totales fiscales
+        totales_usd = self.venta_agent.calcular_totales_con_impuestos()
+        tasa = self.venta_agent.tasa_cambio
+        
+        # Obtener configuración de pagos (IGTF, comisiones)
+        config_pagos = self.venta_agent.obtener_configuracion_pagos(1)
+        
+        # Combinar con la configuración general de la empresa
+        config_empresa = self.venta_agent.obtener_configuracion_empresa(1)
+        config_empresa.update(config_pagos)  # Añadir config de pagos
+        
+        print(f"🔧 Config completa para diálogo: {config_empresa}")  # DEBUG
+        
+        # Mostrar diálogo de pago con tarjeta
+        from ui.dialogos.pago_tarjeta import PagoTarjetaDialog
+        dialog = PagoTarjetaDialog(
+            self.root,
+            total_usd=totales_usd['total_con_iva'],
+            total_bs=totales_usd['total_con_iva'] * tasa,
+            tasa_cambio=tasa,
+            config_empresa=config_empresa,
+            totales_fiscales=totales_usd
+        )
+        resultado = dialog.show()
+        
+        if resultado:
+            logger.info(f"💳 Pago con tarjeta procesado: {resultado}")
+            
+            # Determinar tipo de pago según moneda
+            if resultado['moneda'] == 'USD':
+                tipo_pago = 'TARJETA_USD'
+            else:
+                tipo_pago = 'TARJETA_BS'
+            
+            # Preparar información de pago
+            pago_info = {
+                'moneda': resultado['moneda'],
+                'monto_recibido': resultado['monto_total'],
+                'igtf_aplicado': resultado.get('igtf_aplicado', False),
+                'igtf_monto': resultado.get('igtf_monto', 0),
+                'igtf_porcentaje': resultado.get('igtf_porcentaje', 3.0),
+                'comision_monto': resultado.get('comision_monto', 0),
+                'neto': resultado.get('neto', 0),
+                'referencia': resultado.get('referencia', '')
+            }
+            
+            # Procesar la venta
+            self.procesar_venta(tipo_pago=tipo_pago, pago_info=pago_info)
 
     def pagar_con_cashea(self):
         """Inicia el flujo de pago con Cashea"""
@@ -558,25 +769,180 @@ class MainWindowInteligente:
         
         totales = self.venta_agent.calcular_totales()
         
-        # Verificar monto mínimo
+        # Solicitar autorización a Cashea
         if hasattr(self.venta_agent, 'cashea_agent'):
-            info = self.venta_agent.cashea_agent.obtener_info()
-            monto_minimo = info.get('monto_minimo', 25.0)
+            resultado = self.venta_agent.cashea_agent.solicitar_autorizacion(
+                totales['total_usd']
+            )
             
-            if totales['total_usd'] < monto_minimo:
-                messagebox.showwarning("Cashea", f"El monto mínimo para Cashea es ${monto_minimo}")
-                return
+            if resultado['success']:
+                # Mostrar información al cajero
+                mensaje = (
+                    f"✅ Venta APROBADA por Cashea\n\n"
+                    f"Total: ${resultado['monto_total']:.2f}\n"
+                    f"Inicial a pagar hoy: ${resultado['inicial']:.2f}\n"
+                    f"Resto: ${resultado['resto']:.2f} en {resultado['cuotas']} cuotas\n\n"
+                    f"Referencia: {resultado['referencia']}\n\n"
+                    f"¿El cliente pagó la inicial?"
+                )
+                
+                respuesta = messagebox.askyesno("Cashea - Aprobado", mensaje)
+                
+                if respuesta:
+                    # Registrar venta con Cashea
+                    venta_resultado = self.venta_agent.procesar_venta(
+                        tipo_pago='CASHEA',
+                        datos_cashea=resultado
+                    )
+                    
+                    if venta_resultado['success']:
+                        messagebox.showinfo(
+                            "Cashea - Éxito", 
+                            f"Venta #{venta_resultado['idventa']} registrada con Cashea\n\n"
+                            f"Referencia: {resultado['referencia']}\n"
+                            f"Inicial: ${resultado['inicial']:.2f}\n"
+                            f"Cashea te pagará el resto (${resultado['resto']:.2f}) en 14 días"
+                        )
+                        self.actualizar_carrito()
+                        self.actualizar_historial()
+                    else:
+                        messagebox.showerror(
+                            "Error", 
+                            f"No se pudo registrar la venta:\n{venta_resultado.get('error', 'Error desconocido')}"
+                        )
+            else:
+                messagebox.showerror(
+                    "Cashea - Rechazado",
+                    f"No se pudo procesar el pago con Cashea:\n{resultado.get('error', 'Error desconocido')}"
+                )
+    
+    def simular_notificacion_cashea(self):
+        """Método TEMPORAL para simular una notificación de Cashea"""
+        if hasattr(self.venta_agent, 'cashea_agent'):
+            # Simular datos de una venta aprobada
+            datos = {
+                'referencia': f"CASHEA-{datetime.now().strftime('%y%m%d%H%M%S')}",
+                'monto_total': 77.70,
+                'inicial': 31.08,
+                'cuotas': 3,
+                'cliente': 'Cliente VIP'
+            }
+            self.venta_agent.cashea_agent.recibir_notificacion(datos)
+            self.actualizar_notificaciones()
+            messagebox.showinfo("Simulación", "Notificación de Cashea recibida (simulada)")    
+    
+    def actualizar_notificaciones(self):
+        """Revisa si hay notificaciones nuevas consultando la API webhook"""
+        import requests
         
-        # Simular autorización (luego se conectará a API real)
-        respuesta = messagebox.askyesno(
-            "Confirmar pago con Cashea",
-            f"Total: ${totales['total_usd']:.2f}\n\n"
-            f"El cliente pagará una inicial y el resto en cuotas.\n"
-            f"¿Desea continuar?"
-        )
+        try:
+            # Consultar API webhook
+            response = requests.get("http://localhost:8000/notificaciones/pendientes", timeout=1)
+            if response.status_code == 200:
+                data = response.json()
+                pendientes = data.get('notificaciones', [])
+                cantidad = len(pendientes)
+                
+                # Guardar en el agente local (para compatibilidad)
+                if hasattr(self.venta_agent, 'cashea_agent'):
+                    # Simular que el agente local tiene estas notificaciones
+                    for n in pendientes:
+                        if hasattr(self.venta_agent.cashea_agent, 'notificaciones_pendientes'):
+                            # Evitar duplicados
+                            existe = False
+                            for existente in self.venta_agent.cashea_agent.notificaciones_pendientes:
+                                if existente.get('referencia') == n.get('referencia'):
+                                    existe = True
+                                    break
+                            if not existe:
+                                self.venta_agent.cashea_agent.notificaciones_pendientes.append(n)
+            else:
+                pendientes = []
+                cantidad = 0
+        except:
+            # Si no hay servidor webhook, usar el agente local
+            if hasattr(self.venta_agent, 'cashea_agent'):
+                pendientes = self.venta_agent.cashea_agent.obtener_notificaciones_pendientes()
+                cantidad = len(pendientes)
+            else:
+                pendientes = []
+                cantidad = 0
         
-        if respuesta:
-            messagebox.showinfo("Cashea", "Funcionalidad en desarrollo\n\nPróximamente: Integración con API real")
+        # Actualizar interfaz
+        if cantidad > 0:
+            self.btn_notificaciones.config(text=f"🔔 ({cantidad})", fg='yellow')
+            self.lbl_notif_count.config(text=str(cantidad))
+        else:
+            self.btn_notificaciones.config(text="🔔", fg='white')
+            self.lbl_notif_count.config(text="")
+        
+        # Revisar cada 30 segundos
+        self.root.after(30000, self.actualizar_notificaciones)   
+    
+    def mostrar_notificaciones(self):
+        """Muestra una ventana con las notificaciones pendientes"""
+        if not hasattr(self.venta_agent, 'cashea_agent'):
+            messagebox.showinfo("Notificaciones", "No hay sistema de notificaciones activo")
+            return
+        
+        pendientes = self.venta_agent.cashea_agent.obtener_notificaciones_pendientes()
+        
+        if not pendientes:
+            messagebox.showinfo("Notificaciones", "No hay notificaciones pendientes")
+            return
+        
+        # Crear ventana emergente
+        notif_window = tk.Toplevel(self.root)
+        notif_window.title("Notificaciones Cashea")
+        notif_window.geometry("500x400")
+        
+        # Listbox con scrollbar
+        frame = tk.Frame(notif_window)
+        frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar = tk.Scrollbar(frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        listbox = tk.Listbox(frame, yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        
+        for n in pendientes:
+            texto = f"[{n['fecha']}] {n['cliente']} - ${n['monto_total']} (Inicial: ${n['inicial']})"
+            listbox.insert(tk.END, texto)
+        
+        listbox.pack(side='left', fill='both', expand=True)
+        
+        # Botón para procesar seleccionada
+        def procesar_seleccionada():
+            seleccion = listbox.curselection()
+            if seleccion:
+                idx = seleccion[0]
+                notif = pendientes[idx]
+                
+                respuesta = messagebox.askyesno(
+                    "Procesar venta",
+                    f"Cliente: {notif['cliente']}\n"
+                    f"Total: ${notif['monto_total']}\n"
+                    f"Inicial a cobrar: ${notif['inicial']}\n"
+                    f"Cuotas: {notif['cuotas']}\n\n"
+                    f"¿Cobrar inicial y completar venta?"
+                )
+                
+                if respuesta:
+                    self.venta_agent.cashea_agent.marcar_como_leida(notif['referencia'])
+                    messagebox.showinfo("Éxito", "Venta procesada correctamente")
+                    notif_window.destroy()
+                    self.actualizar_notificaciones()
+        
+        btn_frame = tk.Frame(notif_window)
+        btn_frame.pack(pady=10)
+        
+        tk.Button(btn_frame, text="Procesar seleccionada", 
+                 command=procesar_seleccionada,
+                 bg='#27ae60', fg='white').pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="Cerrar", 
+                 command=notif_window.destroy).pack(side='left', padx=5)    
     
     def actualizar_historial(self):
         ventas = self.venta_agent.obtener_historial(20)
@@ -598,6 +964,90 @@ class MainWindowInteligente:
     
     def run(self):
         self.root.mainloop()
+    
+    # --- MÉTODOS PARA EL PANEL DE PROGRAMADOR (COMANDOS OCULTOS) ---
+    def setup_programador_shortcut(self):
+        """Configura el atajo de teclado para el panel de programador."""
+        self.root.bind('<Control-Shift-P>', self.abrir_panel_programador)
+        logger.debug("🔧 Atajo Ctrl+Shift+P configurado para panel de programador.")
+
+    def abrir_panel_programador(self, event=None):
+        """Abre el panel de acceso para programador."""
+        from tkinter import simpledialog, messagebox
+        
+        password = simpledialog.askstring("Acceso Restringido", 
+                                          "Ingrese la clave de programador:", 
+                                          show='*',
+                                          parent=self.root)
+        if password is None:
+            return
+        if password == "CASHEA_MASTER_2026":  # Cambia esto por tu clave secreta
+            self._mostrar_consola_programador()
+        else:
+            messagebox.showerror("Error", "Clave incorrecta. Acceso denegado.")
+
+    def _mostrar_consola_programador(self):
+        """Ventana de consola para ejecutar comandos de programador."""
+        import tkinter as tk
+        from tkinter import ttk
+        from agente_escritorio.agents.programador_agent import ProgramadorAgent
+
+        try:
+            self.programador_agent = ProgramadorAgent(self.usuario)
+        except PermissionError as e:
+            messagebox.showerror("Acceso Denegado", str(e))
+            return
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo inicializar el agente: {e}")
+            return
+
+        top = tk.Toplevel(self.root)
+        top.title("⚙️ Consola de Programador")
+        top.geometry("700x500")
+        top.transient(self.root)
+        top.grab_set()
+
+        # Área de comandos
+        ttk.Label(top, text="Comando:", font=('Helvetica', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
+        entry_comando = ttk.Entry(top, width=80, font=('Courier', 10))
+        entry_comando.pack(padx=10, pady=5, fill='x')
+        entry_comando.focus()
+
+        # Botón ejecutar
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(pady=5)
+
+        def ejecutar():
+            comando = entry_comando.get()
+            if not comando:
+                return
+            resultado = self.programador_agent.ejecutar_comando(comando)
+            texto_resultado.insert(tk.END, f"> {comando}\n{resultado}\n\n")
+            entry_comando.delete(0, tk.END)
+            texto_resultado.see(tk.END)
+
+        ttk.Button(btn_frame, text="Ejecutar", command=ejecutar).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Limpiar", command=lambda: texto_resultado.delete(1.0, tk.END)).pack(side='left', padx=5)
+
+        # Área de resultados
+        ttk.Label(top, text="Resultado:", font=('Helvetica', 10, 'bold')).pack(anchor='w', padx=10, pady=(10,0))
+        texto_resultado = tk.Text(top, wrap='word', font=('Courier', 10))
+        scrollbar = ttk.Scrollbar(top, orient='vertical', command=texto_resultado.yview)
+        texto_resultado.configure(yscrollcommand=scrollbar.set)
+        
+        frame_resultado = ttk.Frame(top)
+        frame_resultado.pack(fill='both', expand=True, padx=10, pady=5)
+        texto_resultado.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Mostrar ayuda al inicio
+        texto_resultado.insert(tk.END, "=== CONSOLA DE PROGRAMADOR ===\n")
+        texto_resultado.insert(tk.END, "Comandos disponibles:\n")
+        texto_resultado.insert(tk.END, self.programador_agent._ayuda())
+        texto_resultado.insert(tk.END, "\n---\n\n")
+
+        entry_comando.bind('<Return>', lambda e: ejecutar())
+        top.bind('<Escape>', lambda e: top.destroy())    
     
     def __del__(self):
         try:
