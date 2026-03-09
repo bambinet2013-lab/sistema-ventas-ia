@@ -26,16 +26,15 @@ class PagoTarjetaDialog:
         
         # Variables
         self.moneda_var = tk.StringVar(value="USD")
-        self.aplicar_igtf_var = tk.BooleanVar(value=True)
-        
+
         # Crear interfaz
         self.setup_ui()
         
         # Bind para cambios de moneda
-        self.moneda_var.trace('w', lambda *args: self.actualizar_ui())
+        self.moneda_var.trace('w', lambda *args: self.calcular_montos())
         
         # Actualizar UI inicial
-        self.actualizar_ui()
+        self.calcular_montos()
         
     def setup_ui(self):
         """Crea todos los elementos de la interfaz."""
@@ -51,11 +50,7 @@ class PagoTarjetaDialog:
                       value="USD").pack(anchor='w')
         tk.Radiobutton(moneda_frame, text="Bolívares (Bs.)", variable=self.moneda_var, 
                       value="BS").pack(anchor='w')
-        
-        # === IGTF (se actualizará dinámicamente) ===
-        self.igtf_frame = tk.LabelFrame(self.dialog, text="IGTF", padx=10, pady=5)
-        self.igtf_frame.pack(fill='x', padx=20, pady=5)
-        
+  
         # === DETALLE DE PAGO ===
         detalle_frame = tk.LabelFrame(self.dialog, text="Detalle de Pago", padx=10, pady=5)
         detalle_frame.pack(fill='x', padx=20, pady=5)
@@ -92,38 +87,12 @@ class PagoTarjetaDialog:
         
         tk.Button(btn_frame, text="Cancelar", command=self.dialog.destroy,
                  bg='#e74c3c', fg='white', font=('Helvetica', 12), width=15).pack(side='left', padx=5)
-    
-    def actualizar_ui(self):
-        """Actualiza la interfaz según la moneda seleccionada."""
-        moneda = self.moneda_var.get()
-        
-        # Limpiar frame IGTF
-        for widget in self.igtf_frame.winfo_children():
-            widget.destroy()
-        
-        # Determinar si IGTF aplica
-        igtf_aplica = False
-        if moneda == 'USD':
-            igtf_aplica = self.config.get('igtf_aplica_tarjeta_usd', False)
-        
-        # Mostrar checkbox o mensaje
-        if igtf_aplica:
-            self.check_igtf = tk.Checkbutton(self.igtf_frame, text="Aplicar IGTF", 
-                                            variable=self.aplicar_igtf_var,
-                                            command=self.actualizar_ui)
-            self.check_igtf.pack(anchor='w', padx=10, pady=5)
-        else:
-            tk.Label(self.igtf_frame, text="IGTF no aplica para este pago", 
-                    font=('Helvetica', 9), fg='gray').pack(anchor='w', padx=10, pady=5)
-            self.aplicar_igtf_var.set(False)
-        
-        # Calcular montos
-        self.calcular_montos()
-    
+ 
     def calcular_montos(self):
-        """Calcula los montos y actualiza los labels."""
+        """Calcula los montos aplicando IGTF automáticamente según configuración."""
         moneda = self.moneda_var.get()
         
+        # Calcular montos base
         if moneda == 'USD':
             monto_base = self.total_usd
             moneda_simbolo = '$'
@@ -134,11 +103,18 @@ class PagoTarjetaDialog:
         igtf_porcentaje = self.config.get('igtf_porcentaje', 3.0)
         comision_porcentaje = self.config.get('comision_tarjeta', 2.5)
         
-        # Verificar si IGTF aplica
-        igtf_aplica = (moneda == 'USD' and self.config.get('igtf_aplica_tarjeta_usd', False))
+        # 🔥 DECISIÓN AUTOMÁTICA: IGTF aplica si:
+        # - La moneda es USD
+        # - IGTF está activo
+        # - Está configurado para tarjetas USD
+        igtf_aplica = (
+            moneda == 'USD' and 
+            self.config.get('igtf_activo', False) and 
+            self.config.get('igtf_aplica_tarjeta_usd', False)
+        )
         
-        # Aplicar IGTF si está marcado
-        if igtf_aplica and self.aplicar_igtf_var.get():
+        # Aplicar IGTF automáticamente si corresponde
+        if igtf_aplica:
             igtf_monto = monto_base * (igtf_porcentaje / 100)
             monto_con_igtf = monto_base + igtf_monto
         else:
@@ -158,7 +134,7 @@ class PagoTarjetaDialog:
         # Actualizar labels
         self.label_total.config(text=f"Total venta: {moneda_simbolo}{monto_base:.2f}")
         
-        if igtf_aplica and self.aplicar_igtf_var.get():
+        if igtf_aplica:
             self.label_igtf.config(text=f"+ IGTF ({igtf_porcentaje}%): {moneda_simbolo}{igtf_monto:.2f}")
             self.label_igtf.pack(anchor='w', pady=2)
         else:
@@ -172,12 +148,19 @@ class PagoTarjetaDialog:
         """Procesa el pago."""
         moneda = self.moneda_var.get()
         
+        # Determinar si IGTF aplicó (automático)
+        igtf_aplico = (
+            moneda == 'USD' and 
+            self.config.get('igtf_activo', False) and 
+            self.config.get('igtf_aplica_tarjeta_usd', False)
+        )
+        
         self.resultado = {
             'moneda': moneda,
             'monto_total': self.monto_con_igtf,
             'monto_original_usd': self.monto_con_igtf if moneda == 'USD' else self.monto_con_igtf / self.tasa_cambio,
-            'igtf_aplicado': hasattr(self, 'aplicar_igtf_var') and self.aplicar_igtf_var.get(),
-            'igtf_monto': self.igtf_monto,
+            'igtf_aplicado': igtf_aplico,
+            'igtf_monto': self.igtf_monto if igtf_aplico else 0,
             'igtf_porcentaje': self.config.get('igtf_porcentaje', 3.0),
             'comision_monto': self.comision_monto,
             'neto': self.neto,

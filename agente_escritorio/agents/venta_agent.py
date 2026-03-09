@@ -72,29 +72,54 @@ class VentaAgent:
             }        
  
     def obtener_configuracion_pagos(self, id_empresa=1):
-        """Obtiene configuración específica para pagos (comisiones, IGTF)"""
+        """Obtiene configuración específica para pagos (comisiones diferenciadas, IGTF)"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
-                SELECT comision_tarjeta, igtf_activo, igtf_porcentaje,
-                       igtf_aplica_efectivo_usd, igtf_aplica_tarjeta_usd,
-                       igtf_aplica_transferencia_usd
+                SELECT 
+                    comision_tarjeta,  -- Mantenemos la original para compatibilidad
+                    comision_bs_activo, comision_bs_porcentaje,
+                    comision_usd_activo, comision_usd_porcentaje,
+                    comision_internacional_activo, comision_internacional_porcentaje,
+                    igtf_activo, igtf_porcentaje,
+                    igtf_aplica_efectivo_usd, igtf_aplica_tarjeta_usd,
+                    igtf_aplica_transferencia_usd
                 FROM configuracion_operacion 
                 WHERE id_empresa = ?
             """, (id_empresa,))
             row = cursor.fetchone()
             if row:
                 return {
+                    # Mantenemos la comisión original para compatibilidad
                     'comision_tarjeta': float(row[0]) if row[0] else 2.5,
-                    'igtf_activo': bool(row[1]),
-                    'igtf_porcentaje': float(row[2]) if row[2] else 3.0,
-                    'igtf_aplica_efectivo_usd': bool(row[3]),
-                    'igtf_aplica_tarjeta_usd': bool(row[4]),
-                    'igtf_aplica_transferencia_usd': bool(row[5])
+                    
+                    # Nuevas comisiones diferenciadas
+                    'comision_bs': {
+                        'activo': bool(row[1]),
+                        'porcentaje': float(row[2]) if row[2] else 2.5
+                    },
+                    'comision_usd': {
+                        'activo': bool(row[3]),
+                        'porcentaje': float(row[4]) if row[4] else 2.5
+                    },
+                    'comision_internacional': {
+                        'activo': bool(row[5]),
+                        'porcentaje': float(row[6]) if row[6] else 1.5
+                    },
+                    
+                    # IGTF (igual que antes)
+                    'igtf_activo': bool(row[7]),
+                    'igtf_porcentaje': float(row[8]) if row[8] else 3.0,
+                    'igtf_aplica_efectivo_usd': bool(row[9]),
+                    'igtf_aplica_tarjeta_usd': bool(row[10]),
+                    'igtf_aplica_transferencia_usd': bool(row[11])
                 }
             else:
                 return {
                     'comision_tarjeta': 2.5,
+                    'comision_bs': {'activo': True, 'porcentaje': 2.5},
+                    'comision_usd': {'activo': False, 'porcentaje': 2.5},
+                    'comision_internacional': {'activo': False, 'porcentaje': 1.5},
                     'igtf_activo': False,
                     'igtf_porcentaje': 3.0,
                     'igtf_aplica_efectivo_usd': True,
@@ -105,12 +130,15 @@ class VentaAgent:
             logger.error(f"❌ Error obteniendo configuración de pagos: {e}")
             return {
                 'comision_tarjeta': 2.5,
+                'comision_bs': {'activo': True, 'porcentaje': 2.5},
+                'comision_usd': {'activo': False, 'porcentaje': 2.5},
+                'comision_internacional': {'activo': False, 'porcentaje': 1.5},
                 'igtf_activo': False,
                 'igtf_porcentaje': 3.0,
                 'igtf_aplica_efectivo_usd': True,
                 'igtf_aplica_tarjeta_usd': False,
                 'igtf_aplica_transferencia_usd': False
-            } 
+            }
  
     def obtener_modo_operacion(self, id_empresa=1):
         """Obtiene el modo de operación configurado para la empresa"""
@@ -395,11 +423,27 @@ class VentaAgent:
                 igtf_monto = total_venta_usd * (igtf_porcentaje / 100)
                 total_venta_usd += igtf_monto
             
+            # ===== NUEVA LÓGICA DE COMISIONES DIFERENCIADAS =====
             # Calcular comisión bancaria (si aplica)
             comision_monto = 0
-            if tipo_pago in ['TARJETA', 'TARJETA_USD', 'TARJETA_MANUAL']:
-                comision_porcentaje = config_pagos['comision_tarjeta']
+            if 'TARJETA' in tipo_pago:
+                # Determinar qué comisión usar según el tipo de pago
+                if 'INTERNACIONAL' in tipo_pago and config_pagos['comision_internacional']['activo']:
+                    comision_porcentaje = config_pagos['comision_internacional']['porcentaje']
+                    logger.info(f"🌎 Aplicando comisión internacional: {comision_porcentaje}%")
+                elif tipo_pago == 'TARJETA_USD' and config_pagos['comision_usd']['activo']:
+                    comision_porcentaje = config_pagos['comision_usd']['porcentaje']
+                    logger.info(f"💵 Aplicando comisión USD: {comision_porcentaje}%")
+                elif tipo_pago == 'TARJETA_BS' and config_pagos['comision_bs']['activo']:
+                    comision_porcentaje = config_pagos['comision_bs']['porcentaje']
+                    logger.info(f"🇻🇪 Aplicando comisión Bs.: {comision_porcentaje}%")
+                else:
+                    # Fallback a la comisión original si no hay configuración específica
+                    comision_porcentaje = config_pagos['comision_tarjeta']
+                    logger.warning(f"⚠️ Usando comisión por defecto: {comision_porcentaje}%")
+                
                 comision_monto = total_venta_usd * (comision_porcentaje / 100)
+            # ===== FIN NUEVA LÓGICA =====
             
             neto_negocio = total_venta_usd - comision_monto
             
@@ -513,7 +557,7 @@ class VentaAgent:
         except Exception as e:
             self.conn.rollback()
             logger.error(f"❌ Error procesando venta: {e}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': str(e)} 
     
     def _actualizar_stock(self, idarticulo, cantidad, idventa):
         """Actualiza el stock en kardex por venta"""

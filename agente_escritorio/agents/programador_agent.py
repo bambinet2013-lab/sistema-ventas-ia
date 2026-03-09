@@ -154,29 +154,70 @@ class ProgramadorAgent:
             return f"❌ Error: {e}"
 
     def _config_comision(self, partes):
-        """Configura la comisión del banco para pagos con tarjeta."""
+        """Configura comisiones con activación/desactivación para diferentes tipos."""
         if len(partes) < 4:
-            return "❌ Uso: /config comision [porcentaje] [id_empresa]"
+            return ("❌ Uso: /config comision [bs|usd|internacional] [on|off|porcentaje] [id_empresa]\n"
+                    "Ejemplos:\n"
+                    "  /config comision bs on 1\n"
+                    "  /config comision bs off 1\n"
+                    "  /config comision bs 2.5 1\n"
+                    "  /config comision usd on 1\n"
+                    "  /config comision internacional 1.5 1")
         
         try:
-            comision = float(partes[2])
-            id_empresa = int(partes[3])
-            
-            if comision < 0 or comision > 20:
-                return "❌ La comisión debe estar entre 0% y 20%"
+            tipo = partes[2].lower()  # bs, usd, internacional
+            accion = partes[3].lower()
+            id_empresa = int(partes[4])
             
             cursor = self.conn.cursor()
-            cursor.execute("""
-                UPDATE configuracion_operacion 
-                SET comision_tarjeta = ?, fecha_actualizacion = GETDATE()
-                WHERE id_empresa = ?
-            """, (comision, id_empresa))
-            self.conn.commit()
             
-            return f"✅ Comisión para empresa {id_empresa} establecida en {comision}%"
+            # Mapear tipos a campos de la BD
+            if tipo == 'bs':
+                campo_activo = 'comision_bs_activo'
+                campo_porcentaje = 'comision_bs_porcentaje'
+                nombre_tipo = "Bolívares"
+            elif tipo == 'usd':
+                campo_activo = 'comision_usd_activo'
+                campo_porcentaje = 'comision_usd_porcentaje'
+                nombre_tipo = "Dólares"
+            elif tipo == 'internacional':
+                campo_activo = 'comision_internacional_activo'
+                campo_porcentaje = 'comision_internacional_porcentaje'
+                nombre_tipo = "Internacional"
+            else:
+                return "❌ Tipo inválido. Use: bs, usd, internacional"
             
+            # Verificar si la acción es activar/desactivar o porcentaje
+            if accion in ['on', 'off']:
+                nuevo_valor = 1 if accion == 'on' else 0
+                cursor.execute(f"""
+                    UPDATE configuracion_operacion 
+                    SET {campo_activo} = ?, fecha_actualizacion = GETDATE()
+                    WHERE id_empresa = ?
+                """, (nuevo_valor, id_empresa))
+                self.conn.commit()
+                return f"✅ Comisión {nombre_tipo} {'activada' if nuevo_valor else 'desactivada'} para empresa {id_empresa}"
+            
+            else:
+                # Es un porcentaje
+                try:
+                    porcentaje = float(accion)
+                    if porcentaje < 0 or porcentaje > 20:
+                        return "❌ La comisión debe estar entre 0% y 20%"
+                    
+                    cursor.execute(f"""
+                        UPDATE configuracion_operacion 
+                        SET {campo_porcentaje} = ?, fecha_actualizacion = GETDATE()
+                        WHERE id_empresa = ?
+                    """, (porcentaje, id_empresa))
+                    self.conn.commit()
+                    return f"✅ Comisión {nombre_tipo} para empresa {id_empresa} establecida en {porcentaje}%"
+                    
+                except ValueError:
+                    return "❌ El porcentaje debe ser un número"
+                    
         except ValueError:
-            return "❌ El porcentaje debe ser un número"
+            return "❌ ID de empresa inválido"
         except Exception as e:
             return f"❌ Error: {e}"
 
@@ -228,18 +269,23 @@ class ProgramadorAgent:
 
     def _ver_estado(self, partes):
         """Muestra el estado del sistema o de un cliente específico."""
+        print(f"🔍 DEBUG - _ver_estado llamado con partes: {partes}")
+        logger.info(f"🔍 _ver_estado llamado con partes: {partes}")
+        
         if len(partes) == 1:
             # Mostrar resumen general
             try:
                 cursor = self.conn.cursor()
+                
                 cursor.execute("SELECT COUNT(*) FROM configuracion_medios_pago")
                 total_medios = cursor.fetchone()[0]
+                
                 cursor.execute("SELECT COUNT(*) FROM cliente")
                 total_clientes = cursor.fetchone()[0]
+                
                 cursor.execute("SELECT COUNT(*) FROM articulo")
                 total_articulos = cursor.fetchone()[0]
                 
-                # Obtener última venta
                 cursor.execute("SELECT TOP 1 idventa, monto_divisa, tipo_pago, fecha FROM venta ORDER BY idventa DESC")
                 ultima = cursor.fetchone()
                 ultima_text = f"#{ultima[0]} - ${ultima[1]} ({ultima[2]})" if ultima else "Ninguna"
@@ -255,28 +301,68 @@ class ProgramadorAgent:
         elif len(partes) == 2:
             try:
                 id_empresa = int(partes[1])
+                print(f"🔍 DEBUG - Consultando empresa {id_empresa}")
                 cursor = self.conn.cursor()
                 
-                # Obtener configuración de la empresa
                 cursor.execute("""
-                    SELECT modo_operacion, pos_activo, efectivo_usd_activo, redondeo_vuelto, monto_minimo_usd, fecha_actualizacion 
-                    FROM configuracion_operacion WHERE id_empresa = ?
+                    SELECT 
+                        modo_operacion, pos_activo, efectivo_usd_activo, 
+                        redondeo_vuelto, monto_minimo_usd, fecha_actualizacion,
+                        comision_bs_activo, comision_bs_porcentaje,
+                        comision_usd_activo, comision_usd_porcentaje,
+                        comision_internacional_activo, comision_internacional_porcentaje,
+                        igtf_activo, igtf_porcentaje,
+                        igtf_aplica_efectivo_usd, igtf_aplica_tarjeta_usd,
+                        igtf_aplica_transferencia_usd
+                    FROM configuracion_operacion 
+                    WHERE id_empresa = ?
                 """, (id_empresa,))
+                
                 config = cursor.fetchone()
+                print(f"🔍 DEBUG - config obtenido: {config}")
                 
                 if config:
-                    modo, pos_activo, usd_activo, redondeo, min_usd, fecha = config
+                    modo, pos_activo, usd_activo, redondeo, min_usd, fecha = config[:6]
+                    comision_bs_activo, comision_bs_pct = config[6], config[7]
+                    comision_usd_activo, comision_usd_pct = config[8], config[9]
+                    comision_int_activo, comision_int_pct = config[10], config[11]
+                    igtf_activo, igtf_porcentaje = config[12], config[13]
+                    igtf_efectivo, igtf_tarjeta, igtf_transf = config[14], config[15], config[16]
+                    
+                    # Manejar valores None
+                    igtf_porcentaje_val = igtf_porcentaje if igtf_porcentaje is not None else 3.0
+                    
+                    redondeo_val = redondeo if redondeo is not None else 0
+                    min_usd_val = min_usd if min_usd is not None else 0
+                    comision_bs_pct_val = comision_bs_pct if comision_bs_pct is not None else 2.5
+                    comision_usd_pct_val = comision_usd_pct if comision_usd_pct is not None else 2.5
+                    comision_int_pct_val = comision_int_pct if comision_int_pct is not None else 1.5
+                    
                     return (f"📊 **ESTADO DE EMPRESA {id_empresa}**\n"
                             f"   - Modo operación: {modo}\n"
                             f"   - POS activo: {'Sí' if pos_activo else 'No'}\n"
                             f"   - Efectivo USD activo: {'Sí' if usd_activo else 'No'}\n"
-                            f"   - Redondeo vuelto: {redondeo} Bs.\n"
-                            f"   - Monto mínimo USD: ${min_usd:.2f}\n"
+                            f"   - Redondeo vuelto: {redondeo_val} Bs.\n"
+                            f"   - Monto mínimo USD: ${min_usd_val:.2f}\n"
+                            f"\n"
+                            f"   **COMISIONES TARJETA:**\n"
+                            f"   - Bs.: {'✅ Activa' if comision_bs_activo else '❌ Inactiva'} ({comision_bs_pct_val}%)\n"
+                            f"   - USD: {'✅ Activa' if comision_usd_activo else '❌ Inactiva'} ({comision_usd_pct_val}%)\n"
+                            f"   - Internacional: {'✅ Activa' if comision_int_activo else '❌ Inactiva'} ({comision_int_pct_val}%)\n"
+                            f"\n"
+                            f"   **IGTF:**\n"
+                            f"   - Estado: {'✅ Activo' if igtf_activo else '❌ Inactivo'} ({igtf_porcentaje_val}%)\n"
+                            f"   - Aplica a:"
+                            f"{' Efectivo USD' if igtf_efectivo else ''}"
+                            f"{' Tarjeta USD' if igtf_tarjeta else ''}"
+                            f"{' Transferencia USD' if igtf_transf else ''}\n"
                             f"   - Config actualizada: {fecha}")
                 else:
                     return f"❌ No hay configuración para empresa {id_empresa}"
             except ValueError:
                 return "❌ El ID de empresa debe ser un número."
+            except Exception as e:
+                return f"❌ Error obteniendo estado de empresa: {e}"
         else:
             return "❌ Uso: /status [id_empresa]"
 
