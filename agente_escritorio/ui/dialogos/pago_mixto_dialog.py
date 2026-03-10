@@ -192,22 +192,28 @@ class PagoMixtoDialog:
                  width=15, height=2,
                  relief='raised', bd=3).pack(side='left', padx=10)
     
-    def cargar_cuentas(self):
-        """Carga las cuentas disponibles para Pago Móvil/Transferencia"""
+    def cargar_cuentas(self, metodo_filtro=None):
+        """Carga las cuentas disponibles, opcionalmente filtradas por método"""
         try:
-            # Verificar que el repositorio existe
-            if not hasattr(self, 'cuenta_repo'):
-                from models.cuenta_empresa import CuentaEmpresaRepo
-                self.cuenta_repo = CuentaEmpresaRepo(self.conn)
+            from models.cuenta_empresa import CuentaEmpresaRepo
+            self.cuenta_repo = CuentaEmpresaRepo(self.conn)
             
-            # Obtener TODAS las cuentas activas
-            cuentas = self.cuenta_repo.listar_cuentas(solo_programador=True)
-            
-            print(f"🔍 DEBUG - Cuentas encontradas: {len(cuentas)}")
+            if metodo_filtro:
+                # Obtener cuentas que soportan este método específico
+                cuentas = self.cuenta_repo.obtener_cuentas_por_metodo(
+                    metodo_filtro, 
+                    solo_activas=True, 
+                    solo_visibles=True  # Solo las que ve el cajero
+                )
+                print(f"🔍 DEBUG - Cuentas para {metodo_filtro}: {len(cuentas)}")
+            else:
+                # Sin filtro (para compatibilidad)
+                cuentas = self.cuenta_repo.listar_cuentas(solo_programador=False)
+                print(f"🔍 DEBUG - Todas las cuentas: {len(cuentas)}")
             
             if not cuentas:
-                # Si no hay cuentas, mostrar mensaje en el combobox
-                self.combo_cuenta['values'] = ['❌ No hay cuentas configuradas']
+                self.combo_cuenta['values'] = ['❌ No hay cuentas disponibles']
+                self.combo_cuenta.set('')
                 self.cuentas_opciones = []
                 return
             
@@ -219,23 +225,21 @@ class PagoMixtoDialog:
                     texto = f"{c.nombre_banco} - {c.numero_cuenta} ({c.moneda})"
                 
                 opciones.append((texto, c.idcuenta))
-                print(f"   → {texto}")
             
             self.cuentas_opciones = opciones
             self.combo_cuenta['values'] = [op[0] for op in opciones]
             
-            # Seleccionar el primero por defecto
             if opciones:
                 self.combo_cuenta.current(0)
                 
         except Exception as e:
             print(f"❌ Error cargando cuentas: {e}")
             logger.error(f"Error cargando cuentas: {e}")
-            self.combo_cuenta['values'] = ['❌ Error cargando cuentas']
+            self.combo_cuenta['values'] = ['❌ Error']
             self.cuentas_opciones = []
     
     def on_metodo_change(self, event=None):
-        """Muestra/oculta campos según método seleccionado y configura moneda correcta"""
+        """Muestra/oculta campos según método seleccionado y filtra cuentas"""
         metodo = self.metodo_var.get()
         
         # Ocultar todos los frames
@@ -248,29 +252,39 @@ class PagoMixtoDialog:
         if metodo == 'EFECTIVO_BS':
             self.moneda_var.set('BS')
             self.frame_moneda.grid(row=2, column=0, columnspan=2, pady=5, sticky='w')
+            # Cargar cuentas para EFECTIVO_BS (opcional)
+            self.cargar_cuentas('EFECTIVO_BS')
             
         elif metodo == 'EFECTIVO_USD':
             self.moneda_var.set('USD')
             self.frame_moneda.grid(row=2, column=0, columnspan=2, pady=5, sticky='w')
+            # Cargar cuentas para EFECTIVO_USD (opcional)
+            self.cargar_cuentas('EFECTIVO_USD')
             
         elif metodo == 'TARJETA_BS':
             self.moneda_var.set('BS')
-            # No mostrar campos adicionales
+            # Cargar cuentas para TARJETA_BS (opcional)
+            self.cargar_cuentas('TARJETA_BS')
             
         elif metodo == 'TARJETA_USD':
             self.moneda_var.set('USD')
-            # No mostrar campos adicionales
+            # Cargar cuentas para TARJETA_USD (opcional)
+            self.cargar_cuentas('TARJETA_USD')
             
         elif metodo == 'PAGO_MOVIL':
             self.moneda_var.set('BS')
             self.frame_cuenta.grid(row=3, column=0, columnspan=2, pady=5, sticky='w')
             self.frame_ref.grid(row=4, column=0, columnspan=2, pady=5, sticky='w')
             self.frame_telf.grid(row=5, column=0, columnspan=2, pady=5, sticky='w')
+            # Cargar cuentas para PAGO_MOVIL (obligatorio)
+            self.cargar_cuentas('PAGO_MOVIL')
             
         elif metodo == 'TRANSFERENCIA':
             self.moneda_var.set('BS')
             self.frame_cuenta.grid(row=3, column=0, columnspan=2, pady=5, sticky='w')
             self.frame_ref.grid(row=4, column=0, columnspan=2, pady=5, sticky='w')
+            # Cargar cuentas para TRANSFERENCIA (obligatorio)
+            self.cargar_cuentas('TRANSFERENCIA')
         
         self.calcular_preview()
     
@@ -345,7 +359,7 @@ class PagoMixtoDialog:
             messagebox.showerror("Error", "El monto debe ser positivo")
             return
         
-        # Determinar moneda según el método ✅ (INDENTADO CORRECTAMENTE)
+        # Determinar moneda según el método
         if metodo in ['EFECTIVO_BS', 'TARJETA_BS', 'PAGO_MOVIL', 'TRANSFERENCIA']:
             moneda = 'BS'
         elif metodo in ['EFECTIVO_USD', 'TARJETA_USD']:
@@ -369,9 +383,11 @@ class PagoMixtoDialog:
         idcuenta_destino = None
         telefono_cliente = None
         
+        # ===== NUEVA LÓGICA DE VALIDACIÓN DE CUENTAS =====
         if metodo in ['PAGO_MOVIL', 'TRANSFERENCIA']:
-            if not self.combo_cuenta.get():
-                messagebox.showerror("Error", "Seleccione una cuenta destino")
+            # Para Pago Móvil y Transferencia: CUENTA OBLIGATORIA
+            if not self.combo_cuenta.get() or self.combo_cuenta.get() == '❌ No hay cuentas disponibles':
+                messagebox.showerror("Error", f"Seleccione una cuenta destino para {metodo}")
                 return
             
             # Obtener ID de cuenta seleccionada
@@ -389,6 +405,15 @@ class PagoMixtoDialog:
                 if not telefono_cliente:
                     messagebox.showerror("Error", "Ingrese teléfono del cliente")
                     return
+        
+        elif metodo in ['EFECTIVO_BS', 'EFECTIVO_USD', 'TARJETA_BS', 'TARJETA_USD']:
+            # Para Efectivo y Tarjeta: CUENTA OPCIONAL
+            if self.combo_cuenta.get() and self.combo_cuenta.get() != '❌ No hay cuentas disponibles':
+                idx = self.combo_cuenta.current()
+                if idx >= 0 and idx < len(self.cuentas_opciones):
+                    idcuenta_destino = self.cuentas_opciones[idx][1]
+                    # La referencia es opcional para estos métodos
+                    referencia = self.entry_ref.get().strip() or None
         
         # Crear registro de pago
         pago = {

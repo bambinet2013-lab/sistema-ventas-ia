@@ -429,7 +429,7 @@ class ProgramadorAgent:
             return f"❌ Error: {e}"
     
     def _ver_cuentas(self, partes):
-        """Muestra las cuentas configuradas"""
+        """Muestra las cuentas configuradas con sus métodos"""
         try:
             from models.cuenta_empresa import CuentaEmpresaRepo
             
@@ -441,12 +441,17 @@ class ProgramadorAgent:
             
             resultado = "🏦 **CUENTAS DE LA EMPRESA**\n\n"
             for c in cuentas:
+                # Obtener métodos asignados a esta cuenta
+                metodos = repo.obtener_metodos_por_cuenta(c.idcuenta)
+                metodos_str = ", ".join(metodos) if metodos else "Ninguno"
+                
                 visibilidad = "🔒 Programador" if c.solo_programador else "👁️ Todos"
-                resultado += f"{visibilidad} **{c.nombre_banco}**\n"
+                resultado += f"{visibilidad} **{c.nombre_banco}** (ID: {c.idcuenta})\n"
                 resultado += f"   📋 N°: {c.numero_cuenta}\n"
                 resultado += f"   📁 Tipo: {c.tipo_cuenta} ({c.moneda})\n"
                 if c.telefono_asociado:
                     resultado += f"   📱 Pago Móvil: {c.telefono_asociado}\n"
+                resultado += f"   🔧 Métodos: {metodos_str}\n"
                 resultado += "\n"
             
             return resultado
