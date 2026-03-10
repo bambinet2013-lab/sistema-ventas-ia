@@ -6,9 +6,20 @@ from tkinter import ttk, messagebox, font
 from datetime import datetime
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Ajustar path para encontrar los módulos
+current_dir = Path(__file__).parent.absolute()
+project_root = current_dir.parent.parent  # /home/junior/Escritorio/sistema-ventas-python
+agents_dir = project_root / 'agente_escritorio' / 'agents'
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+if str(agents_dir) not in sys.path:
+    sys.path.insert(0, str(agents_dir))
 
 from loguru import logger
+
+# Ahora importamos directamente desde agents
 from agents.venta_agent import VentaAgent
 from agents.cliente_agent import ClienteAgent
 from agents.articulo_agent import ArticuloAgent
@@ -209,15 +220,21 @@ class MainWindowInteligente:
                 self.nombre = "Admin"
                 self.rol = "Administrador"
         
-        self.usuario = Usuario()
+        self.usuario_actual = Usuario()  # ← CAMBIAR a usuario_actual
         print("✅ Usuario creado")
         
         # Inicializar agentes
-        print("📦 Inicializando agentes...")
-        self.venta_agent = VentaAgent(self.usuario)
+        self.venta_agent = VentaAgent(self.usuario_actual)
         self.cliente_agent = ClienteAgent()
         self.articulo_agent = ArticuloAgent()
-        print("✅ Agentes inicializados")
+        
+        # Inicializar programador agent (para comandos ocultos)
+        from agents.programador_agent import ProgramadorAgent
+        try:
+            self.programador_agent = ProgramadorAgent(usuario_actual=self.usuario_actual, parent=self)
+        except PermissionError:
+            self.programador_agent = None
+            logger.warning("⚠️ No se pudo inicializar ProgramadorAgent - permisos insuficientes")
         
         # Inicializar sistema de notificaciones
         if hasattr(self.venta_agent, 'cashea_agent'):
@@ -275,8 +292,8 @@ class MainWindowInteligente:
         self.lbl_notif_count.place_configure(relx=0.7, rely=0.1)
         
         # Usuario
-        tk.Label(right_frame, text=f"👤 {self.usuario.nombre}", 
-                fg='white', bg=self.primary_color).pack(side='left', padx=5)
+        tk.Label(right_frame, text=f"👤 {self.usuario_actual.nombre}", 
+        fg='white', bg=self.primary_color).pack(side='left', padx=5)
       
          # === BARRA DE ESTADO ===
         status_frame = tk.Frame(self.root, bg=self.secondary_color, height=30)
@@ -386,6 +403,13 @@ class MainWindowInteligente:
         self.btn_cashea = tk.Button(botones_pago, text="Cashea", 
                                    bg='#9b59b6', fg='white', width=12,
                                    command=self.pagar_con_cashea)
+        
+  	# 🔥 NUEVO BOTÓN PAGO MIXTO                          
+        self.btn_pago_mixto = tk.Button(botones_pago, text="PAGO MIXTO", 
+                                       bg='#e74c3c', fg='white', width=12,
+                                       command=self.pago_mixto)
+        self.btn_pago_mixto.pack(side='left', padx=5)                                   
+                                   
         # La visibilidad se controla con actualizar_opciones_pago()
          
         self.btn_simular = tk.Button(botones_pago, text="🔔 Simular", 
@@ -831,6 +855,53 @@ class MainWindowInteligente:
             self.actualizar_notificaciones()
             messagebox.showinfo("Simulación", "Notificación de Cashea recibida (simulada)")    
     
+    def pago_mixto(self):
+        """Inicia el proceso de pago mixto combinando múltiples métodos"""
+        if not hasattr(self, 'venta_agent') or not self.venta_agent.carrito:
+            messagebox.showwarning("Advertencia", "No hay productos en el carrito")
+            return
+        
+        # Obtener totales
+        totales_fiscales = self.venta_agent.calcular_totales_con_impuestos()
+        total_usd = totales_fiscales['total_con_iva']
+        total_bs = total_usd * self.venta_agent.tasa_cambio
+        
+        # Obtener configuración
+        config_empresa = self.venta_agent.obtener_configuracion_empresa(1)
+        
+        from ui.dialogos.pago_mixto_dialog import PagoMixtoDialog
+        
+        dialog = PagoMixtoDialog(
+            self.root,
+            total_usd=total_usd,
+            total_bs=total_bs,
+            tasa_cambio=self.venta_agent.tasa_cambio,
+            config_empresa=config_empresa,
+            totales_fiscales=totales_fiscales,
+            venta_agent=self.venta_agent
+        )
+        
+        resultado = dialog.show()
+        
+        if resultado:
+            # Usar el método de venta mixta
+            exito = self.venta_agent.procesar_venta_mixta(resultado['pagos'])
+            
+            if exito and exito.get('success'):
+                messagebox.showinfo("Éxito", 
+                    f"✅ Venta mixta procesada\n"
+                    f"ID: {exito.get('idventa')}\n"
+                    f"Total: ${resultado['total_usd']:.2f}\n"
+                    f"Métodos: {len(resultado['pagos'])}")
+                
+                # Limpiar carrito y actualizar vista
+                self.venta_agent.carrito = []
+                self.actualizar_carrito()
+                self.actualizar_opciones_pago()
+            else:
+                error_msg = exito.get('error', 'Error desconocido') if exito else 'Error procesando venta'
+                messagebox.showerror("Error", f"No se pudo procesar la venta:\n{error_msg}") 
+    
     def actualizar_notificaciones(self):
         """Revisa si hay notificaciones nuevas consultando la API webhook"""
         import requests
@@ -993,7 +1064,7 @@ class MainWindowInteligente:
         from agente_escritorio.agents.programador_agent import ProgramadorAgent
 
         try:
-            self.programador_agent = ProgramadorAgent(self.usuario)
+            self.programador_agent = ProgramadorAgent(usuario_actual=self.usuario_actual, parent=self)
         except PermissionError as e:
             messagebox.showerror("Acceso Denegado", str(e))
             return

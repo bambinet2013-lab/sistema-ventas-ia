@@ -39,7 +39,12 @@ def main():
     logger.info("✅ Agentes listos")
     logger.info(f"👤 Consumidor Final ID: {cliente_agent.obtener_consumidor_final()}")
     
-    articulos = articulo_agent.listar_articulos()
+    # Como no hay listar_articulos(), obtenemos algunos productos de ejemplo
+    articulos = articulo_agent.buscar_por_nombre("")  # Esto trae todos
+    # Si lo de arriba no funciona, usa:
+    # articulos = []
+    
+    print(f"📦 Sistema listo. Agente: {articulo_agent.__class__.__name__}")
     logger.info(f"📦 Artículos en sistema: {len(articulos)}")
     
     input("\nPresione Enter para salir...")

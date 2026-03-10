@@ -13,16 +13,18 @@ from datetime import datetime
 class ProgramadorAgent:
     """Agente con control total del sistema. Acceso restringido."""
 
-    def __init__(self, usuario_actual):
+    def __init__(self, usuario_actual, parent=None):
         """
         Args:
             usuario_actual: Objeto usuario que intenta ejecutar comandos.
+            parent: Ventana padre para mostrar diálogos.
         """
         if not self._es_programador(usuario_actual):
             logger.warning(f"⚠️ Intento de acceso no autorizado por {usuario_actual.nombre}")
             raise PermissionError("Acceso denegado. No tienes permisos de programador.")
         
         self.usuario = usuario_actual
+        self.parent = parent  # ← NUEVO: Guardar referencia a la ventana padre
         self.conn = self._get_connection()
         logger.info(f"✅ ProgramadorAgent inicializado para {usuario_actual.nombre}")
 
@@ -80,8 +82,13 @@ class ProgramadorAgent:
             return self._ver_estado(partes)
         elif cmd == '/ayuda':
             return self._ayuda()
+        # ===== NUEVOS COMANDOS (AGREGADOS AQUÍ - ANTES DEL ELSE) =====
+        elif cmd == '/cuentas':
+            return self._config_cuentas(partes)
+        elif cmd == '/ver_cuentas':
+            return self._ver_cuentas(partes)
         else:
-            return f"❌ Comando '{cmd}' no reconocido. Usa /ayuda para ver los disponibles."
+            return f"❌ Comando '{cmd}' no reconocido. Usa /ayuda para ver los disponibles."  
 
     def _cambiar_modo(self, partes):
         """Cambia el modo de operación de un cliente en la BD real"""
@@ -267,6 +274,31 @@ class ProgramadorAgent:
         except Exception as e:
             return f"❌ Error: {e}"
 
+    def _obtener_info_cuentas(self, id_empresa):
+        """Obtiene información de cuentas bancarias para mostrar en status"""
+        try:
+            from models.cuenta_empresa import CuentaEmpresaRepo
+            
+            repo = CuentaEmpresaRepo(self.conn)
+            cuentas = repo.listar_cuentas(solo_programador=True)
+            
+            if not cuentas:
+                return ""
+            
+            texto = "\n   **CUENTAS BANCARIAS:**\n"
+            for c in cuentas:
+                visibilidad = "🔒" if c.solo_programador else "👁️"
+                texto += f"   {visibilidad} {c.nombre_banco}: {c.numero_cuenta}"
+                if c.moneda == 'USD':
+                    texto += " (USD)"
+                if c.telefono_asociado:
+                    texto += f" 📱{c.telefono_asociado}"
+                texto += "\n"
+            return texto
+        except Exception as e:
+            logger.error(f"Error obteniendo cuentas para status: {e}")
+            return ""
+
     def _ver_estado(self, partes):
         """Muestra el estado del sistema o de un cliente específico."""
         print(f"🔍 DEBUG - _ver_estado llamado con partes: {partes}")
@@ -338,6 +370,17 @@ class ProgramadorAgent:
                     comision_usd_pct_val = comision_usd_pct if comision_usd_pct is not None else 2.5
                     comision_int_pct_val = comision_int_pct if comision_int_pct is not None else 1.5
                     
+                    # Construir texto de aplica IGTF
+                    aplica_text = ""
+                    aplica_text += "Efectivo USD " if igtf_efectivo else ""
+                    aplica_text += "Tarjeta USD " if igtf_tarjeta else ""
+                    aplica_text += "Transferencia USD" if igtf_transf else ""
+                    if not aplica_text.strip():
+                        aplica_text = "Ninguno"
+                    
+                    # Obtener información de cuentas
+                    info_cuentas = self._obtener_info_cuentas(id_empresa)
+                    
                     return (f"📊 **ESTADO DE EMPRESA {id_empresa}**\n"
                             f"   - Modo operación: {modo}\n"
                             f"   - POS activo: {'Sí' if pos_activo else 'No'}\n"
@@ -352,10 +395,8 @@ class ProgramadorAgent:
                             f"\n"
                             f"   **IGTF:**\n"
                             f"   - Estado: {'✅ Activo' if igtf_activo else '❌ Inactivo'} ({igtf_porcentaje_val}%)\n"
-                            f"   - Aplica a:"
-                            f"{' Efectivo USD' if igtf_efectivo else ''}"
-                            f"{' Tarjeta USD' if igtf_tarjeta else ''}"
-                            f"{' Transferencia USD' if igtf_transf else ''}\n"
+                            f"   - Aplica a: {aplica_text}\n"
+                            f"{info_cuentas}"
                             f"   - Config actualizada: {fecha}")
                 else:
                     return f"❌ No hay configuración para empresa {id_empresa}"
@@ -366,9 +407,58 @@ class ProgramadorAgent:
         else:
             return "❌ Uso: /status [id_empresa]"
 
+    def _config_cuentas(self, partes):
+        """Abre el diálogo de configuración de cuentas bancarias"""
+        try:
+            # Importar aquí para evitar dependencias circulares
+            from ui.dialogos.config_cuentas_dialog import ConfigCuentasDialog
+            from models.cuenta_empresa import CuentaEmpresaRepo
+            
+            if not self.parent:
+                return "❌ Error: No hay ventana padre para mostrar el diálogo"
+            
+            repo = CuentaEmpresaRepo(self.conn)
+            dialog = ConfigCuentasDialog(self.parent, repo)
+            dialog.show()
+            return "✅ Configuración de cuentas finalizada"
+        except ImportError as e:
+            logger.error(f"Error importando: {e}")
+            return f"❌ Error importando módulos: {e}"
+        except Exception as e:
+            logger.error(f"Error en _config_cuentas: {e}")
+            return f"❌ Error: {e}"
+    
+    def _ver_cuentas(self, partes):
+        """Muestra las cuentas configuradas"""
+        try:
+            from models.cuenta_empresa import CuentaEmpresaRepo
+            
+            repo = CuentaEmpresaRepo(self.conn)
+            cuentas = repo.listar_cuentas(solo_programador=True)
+            
+            if not cuentas:
+                return "📭 No hay cuentas configuradas"
+            
+            resultado = "🏦 **CUENTAS DE LA EMPRESA**\n\n"
+            for c in cuentas:
+                visibilidad = "🔒 Programador" if c.solo_programador else "👁️ Todos"
+                resultado += f"{visibilidad} **{c.nombre_banco}**\n"
+                resultado += f"   📋 N°: {c.numero_cuenta}\n"
+                resultado += f"   📁 Tipo: {c.tipo_cuenta} ({c.moneda})\n"
+                if c.telefono_asociado:
+                    resultado += f"   📱 Pago Móvil: {c.telefono_asociado}\n"
+                resultado += "\n"
+            
+            return resultado
+        except ImportError:
+            return "❌ No se pudo importar el modelo de cuentas"
+        except Exception as e:
+            logger.error(f"Error en _ver_cuentas: {e}")
+            return f"❌ Error: {e}"
+
     def _ayuda(self):
         """Muestra la ayuda de comandos disponibles."""
-        return ("""
+        return """
 📚 **COMANDOS DISPONIBLES**
 
 `/modo [id_empresa] [normal|pos_solo|hibrido]`
@@ -376,13 +466,19 @@ class ProgramadorAgent:
 
 `/status [id_empresa]`
     Muestra el estado general del sistema o de una empresa específica.
+    
+`/cuentas`
+    Abrir configuración de cuentas bancarias.
+
+`/ver_cuentas`
+    Listar cuentas configuradas.
 
 `/ayuda`
     Muestra esta ayuda.
 
 `/salir`
     Cierra la consola de programador (desde la UI).
-        """)
+        """
 
     def cerrar(self):
         """Cierra la conexión a la base de datos."""

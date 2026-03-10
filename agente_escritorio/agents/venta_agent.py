@@ -622,6 +622,44 @@ class VentaAgent:
             logger.error(f"❌ Error obteniendo historial: {e}")
             return []
     
+    def procesar_venta_mixta(self, pagos):
+        """
+        Procesa una venta con múltiples métodos de pago
+        Args:
+            pagos: Lista de diccionarios con información de cada pago
+        """
+        try:
+            from agents.pago_mixto_agent import PagoMixtoAgent
+            
+            # Calcular total de la venta
+            totales = self.calcular_totales_con_impuestos()
+            total_venta_usd = totales['total_con_iva']
+            
+            # Inicializar agente de pago mixto
+            pago_mixto = PagoMixtoAgent(self.conn, self)
+            pago_mixto.iniciar_pago_mixto(total_venta_usd)
+            
+            # Agregar cada pago
+            for pago in pagos:
+                resultado = pago_mixto.agregar_pago(
+                    metodo=pago['metodo'],
+                    monto=pago['monto'],
+                    moneda=pago.get('moneda', 'USD'),
+                    referencia=pago.get('referencia'),
+                    idcuenta_destino=pago.get('idcuenta_destino'),
+                    telefono_cliente=pago.get('telefono_cliente')
+                )
+                if not resultado.get('success'):
+                    logger.error(f"❌ Error agregando pago: {resultado.get('error')}")
+                    return resultado
+            
+            # Confirmar todos los pagos
+            return pago_mixto.confirmar_pagos()
+            
+        except Exception as e:
+            logger.error(f"❌ Error en procesar_venta_mixta: {e}")
+            return {'success': False, 'error': str(e)}    
+    
     def cerrar(self):
         try:
             self.cliente_agent.cerrar()
