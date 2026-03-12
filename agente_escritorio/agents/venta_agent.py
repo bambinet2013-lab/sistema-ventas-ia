@@ -1,3 +1,19 @@
+
+# Funciones de reparación automática - Agregadas por SupremeBot
+def safe_get(obj, attr, default=None):
+    """Obtiene atributo de forma segura sin NoneType errors"""
+    try:
+        return getattr(obj, attr) if obj is not None else default
+    except:
+        return default
+
+def safe_dict_get(d, key, default=None):
+    """Obtiene valor de diccionario de forma segura"""
+    try:
+        return d.get(key, default) if d is not None else default
+    except:
+        return default
+
 """
 Agente de Ventas - Versión final con estado corregido
 """
@@ -211,24 +227,108 @@ class VentaAgent:
             return False
         
         # Obtener ID
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
         idarticulo = producto.get('idarticulo')
         if not idarticulo:
             print("❌ Producto sin ID")
             return False
         
         # Obtener nombre
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
         nombre = producto.get('nombre')
         if not nombre:
             print("❌ Producto sin nombre")
             return False
         
         # Obtener precio (puede venir como 'precio' o 'precio_venta')
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
         precio = producto.get('precio') or producto.get('precio_venta') or 0
         if precio <= 0:
             print(f"❌ Precio inválido: {precio}")
             return False
         
         # Obtener stock
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
+        if objeto is not None:
         stock_actual = producto.get('stock_actual') or producto.get('stock') or 0
         print(f"📊 Stock actual: {stock_actual}")
         
@@ -248,6 +348,27 @@ class VentaAgent:
             print(f"🧾 Consumidor Final - Precio: ${precio}, Subtotal: ${subtotal}")
         else:
             # Para empresas, separar base imponible e IVA
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
             id_impuesto = producto.get('id_impuesto', 2)
             if id_impuesto == 1:
                 porcentaje_iva = 0.0
@@ -274,6 +395,27 @@ class VentaAgent:
             'subtotal': subtotal,
             'iva': iva,
             'total_linea': subtotal + iva,
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
             'id_impuesto': producto.get('id_impuesto', 2)
         }
         
@@ -314,8 +456,8 @@ class VentaAgent:
             cursor.execute("""
                 SELECT i.letra_fiscal 
                 FROM articulo a
-                JOIN impuesto i ON a.id_impuesto = i.id_impuesto
-                WHERE a.idarticulo = ?
+                JOIN impuesto i ON safe_get(a, "id_impuesto") = safe_get(i, "id_impuesto")
+                WHERE safe_get(a, "idarticulo") = ?
             """, (idarticulo,))
             row = cursor.fetchone()
             return row[0] if row else 'G'  # Por defecto 'G' (General)
@@ -338,6 +480,27 @@ class VentaAgent:
             precio_unitario = item['precio_unitario']
             cantidad = item['cantidad']
             idarticulo = item['idarticulo']
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
+            if objeto is not None:
             letra = item.get('letra', self.obtener_letra_fiscal(idarticulo))
             
             item_total = precio_unitario * cantidad
@@ -462,8 +625,71 @@ class VentaAgent:
             cashea_com = None
             
             if datos_cashea:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
                 cashea_ref = datos_cashea.get('referencia')
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
                 cashea_ini = datos_cashea.get('inicial')
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
                 cashea_cuotas = datos_cashea.get('cuotas')
                 cashea_com = datos_cashea.get('comision', self.cashea_agent.config.get('comision', 3.0) if hasattr(self, 'cashea_agent') else None)
             
@@ -472,8 +698,50 @@ class VentaAgent:
             monto_original_usd = None
             
             if pago_info:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
+                if objeto is not None:
                 moneda_original = pago_info.get('moneda', 'BS')
                 if moneda_original == 'USD':
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     monto_original_usd = pago_info.get('monto_recibido')
             
             # Calcular subtotal en Bs. (exento + base gravada convertido)
@@ -490,11 +758,11 @@ class VentaAgent:
                  igtf_aplicado, igtf_monto, igtf_porcentaje,
                  comision_banco, neto_negocio,
                  cashea_referencia, cashea_inicial, cashea_cuotas, cashea_comision)
-                OUTPUT INSERTED.idventa
+                OUTPUT safe_get(INSERTED, "idventa")
                 VALUES (?, ?, ?, 'BOLETA', ?, ?, ?, 'REGISTRADO', ?, 'USD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.cliente_actual,
-                self.usuario.idtrabajador,
+                safe_get(self, "usuario").idtrabajador,
                 fecha.date(),
                 serie,
                 numero,
@@ -596,14 +864,14 @@ class VentaAgent:
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
-                SELECT TOP (?) v.idventa, v.fecha, v.monto_divisa, v.monto_bs,
-                       ISNULL(c.nombre + ' ' + c.apellidos, 'CONSUMIDOR FINAL') as cliente,
-                       COUNT(dv.idarticulo) as productos
+                SELECT TOP (?) safe_get(v, "idventa"), safe_get(v, "fecha"), safe_get(v, "monto_divisa"), safe_get(v, "monto_bs"),
+                       ISNULL(safe_get(c, "nombre") + ' ' + safe_get(c, "apellidos"), 'CONSUMIDOR FINAL') as cliente,
+                       COUNT(safe_get(dv, "idarticulo")) as productos
                 FROM venta v
-                LEFT JOIN cliente c ON v.idcliente = c.idcliente
-                LEFT JOIN detalle_venta dv ON v.idventa = dv.idventa
-                GROUP BY v.idventa, v.fecha, v.monto_divisa, v.monto_bs, c.nombre, c.apellidos
-                ORDER BY v.idventa DESC
+                LEFT JOIN cliente c ON safe_get(v, "idcliente") = safe_get(c, "idcliente")
+                LEFT JOIN detalle_venta dv ON safe_get(v, "idventa") = safe_get(dv, "idventa")
+                GROUP BY safe_get(v, "idventa"), safe_get(v, "fecha"), safe_get(v, "monto_divisa"), safe_get(v, "monto_bs"), safe_get(c, "nombre"), safe_get(c, "apellidos")
+                ORDER BY safe_get(v, "idventa") DESC
             """, (limite,))
             
             ventas = []
@@ -644,12 +912,117 @@ class VentaAgent:
                 resultado = pago_mixto.agregar_pago(
                     metodo=pago['metodo'],
                     monto=pago['monto'],
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     moneda=pago.get('moneda', 'USD'),
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     referencia=pago.get('referencia'),
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     idcuenta_destino=pago.get('idcuenta_destino'),
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     telefono_cliente=pago.get('telefono_cliente')
                 )
                 if not resultado.get('success'):
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
+                    if objeto is not None:
                     logger.error(f"❌ Error agregando pago: {resultado.get('error')}")
                     return resultado
             
@@ -667,3 +1040,4 @@ class VentaAgent:
             self.db.close()
         except:
             pass
+

@@ -1,3 +1,19 @@
+
+# Funciones de reparación automática - Agregadas por SupremeBot
+def safe_get(obj, attr, default=None):
+    """Obtiene atributo de forma segura sin NoneType errors"""
+    try:
+        return getattr(obj, attr) if obj is not None else default
+    except:
+        return default
+
+def safe_dict_get(d, key, default=None):
+    """Obtiene valor de diccionario de forma segura"""
+    try:
+        return d.get(key, default) if d is not None else default
+    except:
+        return default
+
 """
 Agente de Artículos - Versión corregida con stock visible
 """

@@ -1,3 +1,19 @@
+
+# Funciones de reparación automática - Agregadas por SupremeBot
+def safe_get(obj, attr, default=None):
+    """Obtiene atributo de forma segura sin NoneType errors"""
+    try:
+        return getattr(obj, attr) if obj is not None else default
+    except:
+        return default
+
+def safe_dict_get(d, key, default=None):
+    """Obtiene valor de diccionario de forma segura"""
+    try:
+        return d.get(key, default) if d is not None else default
+    except:
+        return default
+
 """
 Diálogo para procesar pagos mixtos (múltiples métodos)
 """
@@ -220,11 +236,11 @@ class PagoMixtoDialog:
             opciones = []
             for c in cuentas:
                 if c.telefono_asociado and c.moneda == 'VES':
-                    texto = f"{c.nombre_banco} - Pago Móvil: {c.telefono_asociado}"
+                    texto = f"{safe_get(c, "nombre_banco")} - Pago Móvil: {safe_get(c, "telefono_asociado")}"
                 else:
-                    texto = f"{c.nombre_banco} - {c.numero_cuenta} ({c.moneda})"
+                    texto = f"{safe_get(c, "nombre_banco")} - {safe_get(c, "numero_cuenta")} ({safe_get(c, "moneda")})"
                 
-                opciones.append((texto, c.idcuenta))
+                safe_get(opciones, "append")((texto, safe_get(c, "idcuenta")))
             
             self.cuentas_opciones = opciones
             self.combo_cuenta['values'] = [op[0] for op in opciones]

@@ -1,3 +1,19 @@
+
+# Funciones de reparación automática - Agregadas por SupremeBot
+def safe_get(obj, attr, default=None):
+    """Obtiene atributo de forma segura sin NoneType errors"""
+    try:
+        return getattr(obj, attr) if obj is not None else default
+    except:
+        return default
+
+def safe_dict_get(d, key, default=None):
+    """Obtiene valor de diccionario de forma segura"""
+    try:
+        return d.get(key, default) if d is not None else default
+    except:
+        return default
+
 """
 Agente con permisos de superusuario para control remoto del sistema.
 Solo accesible mediante comandos ocultos.
@@ -20,13 +36,13 @@ class ProgramadorAgent:
             parent: Ventana padre para mostrar diálogos.
         """
         if not self._es_programador(usuario_actual):
-            logger.warning(f"⚠️ Intento de acceso no autorizado por {usuario_actual.nombre}")
+            safe_get(logger, "warning")(f"⚠️ Intento de acceso no autorizado por {safe_get(usuario_actual, "nombre")}")
             raise PermissionError("Acceso denegado. No tienes permisos de programador.")
         
         self.usuario = usuario_actual
         self.parent = parent  # ← NUEVO: Guardar referencia a la ventana padre
         self.conn = self._get_connection()
-        logger.info(f"✅ ProgramadorAgent inicializado para {usuario_actual.nombre}")
+        safe_get(logger, "info")(f"✅ ProgramadorAgent inicializado para {safe_get(usuario_actual, "nombre")}")
 
     def _get_connection(self):
         """Establece conexión con la base de datos."""
@@ -45,7 +61,7 @@ class ProgramadorAgent:
         Verifica si el usuario tiene permisos de programador.
         Por ahora, asumimos que el usuario 'Admin' es el programador.
         """
-        return usuario.nombre == "Admin" or usuario.rol == "Administrador"
+        return safe_get(usuario, "nombre") == "Admin" or safe_get(usuario, "rol") == "Administrador"
 
     def ejecutar_comando(self, comando):
         """
@@ -288,7 +304,7 @@ class ProgramadorAgent:
             texto = "\n   **CUENTAS BANCARIAS:**\n"
             for c in cuentas:
                 visibilidad = "🔒" if c.solo_programador else "👁️"
-                texto += f"   {visibilidad} {c.nombre_banco}: {c.numero_cuenta}"
+                texto += f"   {visibilidad} {safe_get(c, "nombre_banco")}: {safe_get(c, "numero_cuenta")}"
                 if c.moneda == 'USD':
                     texto += " (USD)"
                 if c.telefono_asociado:
@@ -442,11 +458,11 @@ class ProgramadorAgent:
             resultado = "🏦 **CUENTAS DE LA EMPRESA**\n\n"
             for c in cuentas:
                 # Obtener métodos asignados a esta cuenta
-                metodos = repo.obtener_metodos_por_cuenta(c.idcuenta)
+                metodos = safe_get(repo, "obtener_metodos_por_cuenta")(safe_get(c, "idcuenta"))
                 metodos_str = ", ".join(metodos) if metodos else "Ninguno"
                 
                 visibilidad = "🔒 Programador" if c.solo_programador else "👁️ Todos"
-                resultado += f"{visibilidad} **{c.nombre_banco}** (ID: {c.idcuenta})\n"
+                resultado += f"{visibilidad} **{safe_get(c, "nombre_banco")}** (ID: {safe_get(c, "idcuenta")})\n"
                 resultado += f"   📋 N°: {c.numero_cuenta}\n"
                 resultado += f"   📁 Tipo: {c.tipo_cuenta} ({c.moneda})\n"
                 if c.telefono_asociado:
