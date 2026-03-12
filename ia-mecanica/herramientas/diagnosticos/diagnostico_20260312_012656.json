@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-03-12T01:26:56.659612",
+  "errores_criticos": [
+    {
+      "tipo": "IndentationError",
+      "gravedad": "\ud83d\udfe1 MEDIO",
+      "descripcion": "Revisar indentaci\u00f3n del c\u00f3digo",
+      "linea": "IndentationError: expected an indented block after 'if' statement on line 230",
+      "timestamp": "2026-03-12T01:26:56.660117",
+      "numero_linea": 6,
+      "causas_posibles": [
+        "Mezcla de tabs y espacios",
+        "Bloque mal indentado"
+      ],
+      "peso": 50
+    }
+  ],
+  "advertencias": [],
+  "sugerencias": [],
+  "codigo_reparacion": {},
+  "estadisticas": {
+    "logs": {
+      "total_lineas": 6,
+      "lineas_hoy": 0,
+      "lineas_analizadas": 6
+    },
+    "errores": {
+      "total_detectados": 1,
+      "tipos_distintos": 1,
+      "frecuencia_por_hora": 1.0,
+      "tipos": {
+        "IndentationError": 1
+      }
+    }
+  }
+}

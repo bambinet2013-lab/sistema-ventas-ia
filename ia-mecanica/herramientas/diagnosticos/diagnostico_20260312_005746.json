@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-12T00:57:46.919676",
+  "errores_criticos": [
+    {
+      "tipo": "NoneType",
+      "descripcion": "Acceso a objeto None - Falta validaci\u00f3n",
+      "linea": "ERROR CR\u00cdTICO: AttributeError en modulo_ventas - objeto 'NoneType' no tiene atributo 'precio'",
+      "timestamp": "2026-03-12T00:57:46.919977"
+    }
+  ],
+  "advertencias": [],
+  "sugerencias": [],
+  "codigo_reparacion": {
+    "NoneType": "\n# \ud83d\udee0\ufe0f REPARACI\u00d3N PARA ERROR NoneType\n# Agregar esta validaci\u00f3n antes de acceder al objeto\n\ndef validar_objeto(objeto, campo, default=None):\n    \"\"\"Valida que un objeto y campo existan antes de acceder\"\"\"\n    if objeto is None:\n        return default\n    return objeto.get(campo, default)\n\n# Ejemplo de uso:\n# En lugar de: valor = objeto['campo']\n# Usar: valor = validar_objeto(objeto, 'campo', 0)\n"
+  },
+  "estadisticas": {
+    "errores_en_logs": 1
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "patrones": [
+    {
+      "error": "SIN VENTAS EN 5 MINUTOS",
+      "frecuencia": 200,
+      "ultima_vez": "2026-03-12T02:09:36.749733",
+      "nivel": "\ud83d\udd34",
+      "ejemplos": [
+        "No se han registrado ventas en los \u00faltimos 5 minutos. Verificar sistema.",
+        "No se han registrado ventas en los \u00faltimos 5 minutos. Verificar sistema.",
+        "No se han registrado ventas en los \u00faltimos 5 minutos. Verificar sistema."
+      ],
+      "soluciones_posibles": [],
+      "aprendido": "2026-03-11T22:34:55.019785"
+    },
+    {
+      "error": "2 PRODUCTOS CON STOCK CR\u00cdTICO",
+      "frecuencia": 19,
+      "ultima_vez": "2026-03-11T22:34:42.305764",
+      "nivel": "\u26a0\ufe0f",
+      "ejemplos": [
+        "Productos con stock < 3: KIT DE TRANSMISI\u00d3N P, PASTILLAS DE FRENO...",
+        "Productos con stock < 3: KIT DE TRANSMISI\u00d3N P, PASTILLAS DE FRENO...",
+        "Productos con stock < 3: KIT DE TRANSMISI\u00d3N P, PASTILLAS DE FRENO..."
+      ],
+      "soluciones_posibles": [],
+      "aprendido": "2026-03-11T22:34:55.019935"
+    },
+    {
+      "error": "2 PRODUCTOS STOCK BAJO",
+      "frecuencia": 183,
+      "ultima_vez": "2026-03-12T02:09:36.757354",
+      "nivel": "\u26a0\ufe0f",
+      "aprendido": "2026-03-11T22:56:25.957179"
+    },
+    {
+      "error": "1 ERRORES EN LOGS",
+      "frecuencia": 39,
+      "ultima_vez": "2026-03-12T00:59:32.882877",
+      "nivel": "\ud83d\udd34",
+      "aprendido": "2026-03-12T00:21:30.677339"
+    }
+  ],
+  "soluciones_exitosas": {},
+  "estadisticas": {
+    "total_alertas": 0,
+    "alertas_resueltas": 0,
+    "tasa_exito": 0
+  }
+}

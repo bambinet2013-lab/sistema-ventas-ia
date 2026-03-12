@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-03-12T01:57:46.874224",
+  "errores_criticos": [],
+  "advertencias": [],
+  "sugerencias": [],
+  "codigo_reparacion": {},
+  "estadisticas": {
+    "logs": {
+      "total_lineas": 0,
+      "lineas_hoy": 0,
+      "lineas_analizadas": 0
+    },
+    "errores": {
+      "total_detectados": 0
+    }
+  }
+}

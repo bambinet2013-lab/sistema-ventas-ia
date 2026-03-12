@@ -1,0 +1,66 @@
+{
+  "conversaciones": [
+    {
+      "usuario": "junior",
+      "fecha": "2026-03-11T22:50:25.722184",
+      "mensaje": "hola",
+      "respuesta": "Procesando consulta: hola (conectando con agente...)"
+    },
+    {
+      "usuario": "junior",
+      "fecha": "2026-03-11T23:14:03.448004",
+      "mensaje": "ps aux | grep sistema_mega",
+      "respuesta": "Procesando: ps aux | grep sistema_mega"
+    },
+    {
+      "usuario": "junior",
+      "fecha": "2026-03-11T23:14:22.785404",
+      "mensaje": "tail -f mega.log",
+      "respuesta": "Procesando: tail -f mega.log"
+    },
+    {
+      "usuario": "junior",
+      "fecha": "2026-03-11T23:14:47.423236",
+      "mensaje": "tail -20 alertas_detectadas.json | python3 -m json.tool",
+      "respuesta": "Procesando: tail -20 alertas_detectadas.json | python3 -m json.tool"
+    },
+    {
+      "usuario": "junior",
+      "fecha": "2026-03-11T23:15:26.505210",
+      "mensaje": "cat alertas_priorizadas.json | python3 -m json.tool | head -30",
+      "respuesta": "Procesando: cat alertas_priorizadas.json | python3 -m json.tool | head -30"
+    }
+  ],
+  "preguntas_frecuentes": {
+    "hola": {
+      "respuesta": "Procesando consulta: hola (conectando con agente...)",
+      "veces_preguntada": 1,
+      "ultima_vez": "2026-03-11T22:50:25.721877"
+    },
+    "ps aux | grep sistema_mega": {
+      "respuesta": "Procesando: ps aux | grep sistema_mega",
+      "veces_preguntada": 1,
+      "ultima_vez": "2026-03-11T23:14:03.447980"
+    },
+    "tail -f mega.log": {
+      "respuesta": "Procesando: tail -f mega.log",
+      "veces_preguntada": 1,
+      "ultima_vez": "2026-03-11T23:14:22.785379"
+    },
+    "tail -20 alertas_detectadas.json | python3 -m json.tool": {
+      "respuesta": "Procesando: tail -20 alertas_detectadas.json | python3 -m json.tool",
+      "veces_preguntada": 1,
+      "ultima_vez": "2026-03-11T23:14:47.423211"
+    },
+    "cat alertas_priorizadas.json | python3 -m json.tool | head -30": {
+      "respuesta": "Procesando: cat alertas_priorizadas.json | python3 -m json.tool | head -30",
+      "veces_preguntada": 1,
+      "ultima_vez": "2026-03-11T23:15:26.505189"
+    }
+  },
+  "contextos": {},
+  "estadisticas": {
+    "total_interacciones": 0,
+    "usuarios_unicos": 0
+  }
+}

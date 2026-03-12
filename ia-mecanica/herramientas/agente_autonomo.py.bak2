@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""
+🤯 AGENTE CON AUTO-EXTENSIÓN (SELF-EXTENDING AGENT)
+Basado en conceptos de FinchBot y LangChain 
+Este agente puede crear sus propias herramientas cuando las necesita.
+"""
+
+import json
+import os
+import importlib.util
+import inspect
+from typing import Any, Dict, List, Optional, Type
+from datetime import datetime
+
+# Simulación de un entorno de agente simple
+class AgenteAutonomo:
+    def __init__(self, nombre: str, directorio_habilidades: str = "./habilidades"):
+        self.nombre = nombre
+        self.directorio_habilidades = directorio_habilidades
+        self.habilidades: Dict[str, callable] = {}
+        self.memoria: List[Dict] = []
+        self.conocimiento = self._cargar_conocimiento()
+        
+        # Asegurarse de que el directorio de habilidades existe
+        os.makedirs(self.directorio_habilidades, exist_ok=True)
+        
+        # Cargar habilidades existentes
+        self._cargar_habilidades()
+        
+        print(f"✅ Agente '{self.nombre}' inicializado con {len(self.habilidades)} habilidades.")
+        
+    def _cargar_conocimiento(self):
+        """Carga el conocimiento previo del agente"""
+        try:
+            with open("conocimiento_aprendido.json", 'r') as f:
+                return json.load(f)
+        except:
+            return {"patrones": [], "soluciones_exitosas": {}}
+    
+    def _cargar_habilidades(self):
+        """Carga dinámicamente todos los archivos .py del directorio de habilidades como módulos."""
+        for archivo in os.listdir(self.directorio_habilidades):
+            if archivo.endswith(".py") and not archivo.startswith("__"):
+                nombre_modulo = archivo[:-3]
+                ruta_completa = os.path.join(self.directorio_habilidades, archivo)
+                self._importar_habilidad(nombre_modulo, ruta_completa)
+    
+    def _importar_habilidad(self, nombre_modulo: str, ruta: str):
+        """Importa un archivo de Python como un módulo y busca una función decorada."""
+        try:
+            spec = importlib.util.spec_from_file_location(nombre_modulo, ruta)
+            modulo = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(modulo)
+            
+            # Buscar funciones que tengan el atributo 'es_habilidad' (lo pondremos nosotr@s)
+            for nombre, obj in inspect.getmembers(modulo, inspect.isfunction):
+                if hasattr(obj, 'es_habilidad') and obj.es_habilidad:
+                    self.habilidades[obj.nombre_habilidad] = obj
+                    print(f"   🛠️ Habilidad cargada: {obj.nombre_habilidad}")
+        except Exception as e:
+            print(f"   ❌ Error cargando habilidad {nombre_modulo}: {e}")
+
+    def crear_habilidad(self, nombre: str, descripcion: str, codigo: str) -> bool:
+        """
+        El método MÁGICO. Crea un nuevo archivo de habilidad en el directorio.
+        """
+        ruta_archivo = os.path.join(self.directorio_habilidades, f"{nombre}.py")
+        
+        # Plantilla para una nueva habilidad
+        plantilla = f'''"""
+Habilidad autogenerada: {nombre}
+Descripción: {descripcion}
+Creada por: {self.nombre} en {datetime.now()}
+"""
+
+# Este decorador simula el registro de una herramienta
+def herramienta(nombre, descripcion):
+    def decorador(func):
+        func.es_habilidad = True
+        func.nombre_habilidad = nombre
+        func.descripcion_habilidad = descripcion
+        return func
+    return decorador
+
+{codigo}
+'''
+        try:
+            with open(ruta_archivo, 'w') as f:
+                f.write(plantilla)
+            print(f"   ✅ Habilidad '{nombre}' creada en disco.")
+            # Intentar cargarla inmediatamente
+            self._importar_habilidad(nombre, ruta_archivo)
+            return True
+        except Exception as e:
+            print(f"   ❌ Error creando habilidad {nombre}: {e}")
+            return False
+
+    # --- Herramientas Base ---
+    
+    # Decorador para registrar habilidades base
+    @staticmethod
+    def herramienta(nombre, descripcion):
+        def decorador(func):
+            func.es_habilidad = True
+            func.nombre_habilidad = nombre
+            func.descripcion_habilidad = descripcion
+            return func
+        return decorador
+
+    @herramienta("analizar_pregunta", "Analiza una pregunta del usuario para entender la intención.")
+    def analizar_pregunta(self, pregunta: str) -> Dict:
+        """Simula el análisis de la pregunta."""
+        print(f"   🔍 Analizando: '{pregunta}'")
+        if "crea una herramienta" in pregunta.lower() or "aprende a" in pregunta.lower():
+            return {"intencion": "auto_extension", "descripcion": pregunta}
+        return {"intencion": "consulta_normal", "pregunta": pregunta}
+
+    @herramienta("skill_creator", "Crea una nueva habilidad (herramienta) para el agente a partir de código Python.")
+    def skill_creator(self, nombre: str, descripcion: str, codigo: str) -> str:
+        """
+        Esta es la herramienta que lo cambia todo. Recibe un nombre, descripción
+        y el código Python de la función que ejecutará la habilidad.
+        """
+        print(f"   🛠️ Intentando crear nueva habilidad: {nombre}")
+        exito = self.crear_habilidad(nombre, descripcion, codigo)
+        if exito:
+            return f"Habilidad '{nombre}' creada y cargada exitosamente."
+        else:
+            return f"Fallo al crear la habilidad '{nombre}'. Revisa el código."
+
+    @herramienta("listar_habilidades", "Lista todas las habilidades que el agente posee actualmente.")
+    def listar_habilidades(self) -> str:
+        habilidades_lista = "\n".join([f"  - {k}: {v.descripcion_habilidad}" for k, v in self.habilidades.items()])
+        return f"Habilidades disponibles:\n{habilidades_lista}"
+
+    # --- El Cerebro del Agente ---
+    def procesar(self, entrada_usuario: str) -> str:
+        """Procesa la entrada del usuario y decide qué herramienta usar."""
+        print(f"\n🤔 {self.nombre} procesando: '{entrada_usuario}'")
+        
+        # 1. Analizar la pregunta
+        analisis = self.analizar_pregunta(entrada_usuario)
+        
+        # 2. Si la intención es crear una herramienta
+        if analisis.get("intencion") == "auto_extension":
+            print("   🧠 Intención detectada: AUTO-EXTENSIÓN. Generando código...")
+            
+            entrada_lower = entrada_usuario.lower()
+            
+            # DETECCIÓN DE CALCULADORA
+            if any(palabra in entrada_lower for palabra in ["calculadora", "calcular", "suma", "resta", "multiplica", "divide"]):
+                nombre_habilidad = "calculadora_basica"
+                desc_habilidad = "Realiza operaciones aritméticas básicas (suma, resta, multiplicación, división)."
+                codigo_habilidad = '''
+@herramienta("calculadora_basica", "Realiza operaciones aritméticas básicas (suma, resta, multiplicación, división).")
+def calculadora_basica(operacion: str, a: float, b: float) -> str:
+    """Ejecuta una operación aritmética."""
+    if operacion == "suma":
+        return f"Resultado: {a + b}"
+    elif operacion == "resta":
+        return f"Resultado: {a - b}"
+    elif operacion == "multiplica":
+        return f"Resultado: {a * b}"
+    elif operacion == "divide":
+        if b == 0:
+            return "Error: División por cero"
+        return f"Resultado: {a / b}"
+    else:
+        return "Operación no soportada. Prueba con: suma, resta, multiplica, divide"
+'''
+            
+            # DETECCIÓN DE CLIMA
+            elif "clima" in entrada_lower or "tiempo" in entrada_lower:
+                nombre_habilidad = "clima_falso"
+                desc_habilidad = "Devuelve un informe meteorológico simulado para una ciudad."
+                codigo_habilidad = '''
+@herramienta("clima_falso", "Devuelve un informe meteorológico simulado para una ciudad.")
+def clima_falso(ciudad: str) -> str:
+    """Simula una consulta meteorológica."""
+    import random
+    condiciones = ["☀️ soleado", "⛅ nublado", "🌧️ lluvioso", "🌪️ ventoso", "❄️ nevado"]
+    temperatura = random.randint(5, 35)
+    humedad = random.randint(30, 90)
+    condicion = random.choice(condiciones)
+    return f"Clima en {ciudad}: {condicion}, {temperatura}°C, humedad {humedad}%"
+'''
+            
+            # DETECCIÓN DE STOCK (para tu sistema de ventas)
+            elif "stock" in entrada_lower or "inventario" in entrada_lower:
+                nombre_habilidad = "consultar_stock"
+                desc_habilidad = "Consulta el stock actual de productos en la base de datos."
+                codigo_habilidad = '''
+@herramienta("consultar_stock", "Consulta el stock actual de productos en la base de datos.")
+def consultar_stock(producto: str = None) -> str:
+    """Consulta stock de productos (simulado)."""
+    # Aquí conectarías con tu BD real
+    import random
+    if producto:
+        return f"Stock de '{producto}': {random.randint(0, 50)} unidades"
+    else:
+        productos = ["Laptop HP", "Mouse", "Teclado", "Monitor", "Impresora"]
+        resultado = "📊 STOCK ACTUAL:\\n"
+        for p in productos:
+            resultado += f"  • {p}: {random.randint(0, 50)} unidades\\n"
+        return resultado
+'''
+            
+            # DETECCIÓN DE VENTAS
+            elif "venta" in entrada_lower or "factura" in entrada_lower:
+                nombre_habilidad = "consultar_ventas"
+                desc_habilidad = "Consulta información de ventas recientes."
+                codigo_habilidad = '''
+@herramienta("consultar_ventas", "Consulta información de ventas recientes.")
+def consultar_ventas(ultimas: int = 5) -> str:
+    """Muestra las últimas ventas (simulado)."""
+    import random
+    from datetime import datetime, timedelta
+    
+    resultado = f"🛒 ÚLTIMAS {ultimas} VENTAS:\\n"
+    for i in range(ultimas):
+        fecha = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        monto = random.randint(10, 500)
+        resultado += f"  • Venta #{1000+i}: {fecha} - ${monto}\\n"
+    return resultado
+'''
+            
+            else:
+                return ("No supe cómo generar una herramienta para eso. Intenta con:\n"
+                        "  • 'crea una calculadora'\n"
+                        "  • 'aprende sobre el clima'\n"
+                        "  • 'consulta el stock'\n"
+                        "  • 'muestra ventas'")
+
+            # 3. Ejecutar la herramienta de creación
+            resultado_creacion = self.skill_creator(nombre_habilidad, desc_habilidad, codigo_habilidad)
+            return resultado_creacion
+        
+        # 3. Si es una consulta normal, buscar la herramienta
+        else:
+            # Simular que ejecuta la herramienta correcta
+            if "lista" in entrada_usuario:
+                return self.listar_habilidades()
+            else:
+                return f"Procesando consulta normal: '{entrada_usuario}'. Usa 'lista' para ver mis habilidades."
+
+	            # DETECCIÓN DE IVA (nuevo)
+            elif "iva" in entrada_lower or "impuesto" in entrada_lower or "precio con iva" in entrada_lower:
+                nombre_habilidad = "calcular_iva"
+                desc_habilidad = "Calcula el precio final con IVA incluido (16%)."
+                codigo_habilidad = '''
+@herramienta("calcular_iva", "Calcula el precio final con IVA incluido (16%).")
+def calcular_iva(precio_sin_iva: float) -> str:
+    """Calcula el IVA y el precio final."""
+    iva = precio_sin_iva * 0.16
+    total = precio_sin_iva + iva
+    return (f"📊 CÁLCULO DE IVA:\\n"
+            f"   Precio sin IVA: ${precio_sin_iva:.2f}\\n"
+            f"   IVA (16%): ${iva:.2f}\\n"
+            f"   TOTAL con IVA: ${total:.2f}")
+'''
+            
+            # DETECCIÓN DE DESCUENTOS
+            elif "descuento" in entrada_lower or "porcentaje de descuento" in entrada_lower:
+                nombre_habilidad = "calcular_descuento"
+                desc_habilidad = "Calcula el precio final después de aplicar un porcentaje de descuento."
+                codigo_habilidad = '''
+@herramienta("calcular_descuento", "Calcula el precio final después de aplicar un porcentaje de descuento.")
+def calcular_descuento(precio_original: float, porcentaje_descuento: float) -> str:
+    """Aplica un descuento porcentual a un precio."""
+    descuento = precio_original * (porcentaje_descuento / 100)
+    precio_final = precio_original - descuento
+    return (f"🏷️ CÁLCULO DE DESCUENTO:\\n"
+            f"   Precio original: ${precio_original:.2f}\\n"
+            f"   Descuento ({porcentaje_descuento}%): -${descuento:.2f}\\n"
+            f"   PRECIO FINAL: ${precio_final:.2f}")
+'''
+            
+            # DETECCIÓN DE GANANCIA (útil para negocio)
+            elif "ganancia" in entrada_lower or "margen" in entrada_lower or "utilidad" in entrada_lower:
+                nombre_habilidad = "calcular_ganancia"
+                desc_habilidad = "Calcula la ganancia y el margen de un producto."
+                codigo_habilidad = '''
+@herramienta("calcular_ganancia", "Calcula la ganancia y el margen de un producto.")
+def calcular_ganancia(costo: float, precio_venta: float) -> str:
+    """Calcula ganancia bruta y margen porcentual."""
+    ganancia = precio_venta - costo
+    margen = (ganancia / costo) * 100 if costo > 0 else 0
+    return (f"💰 ANÁLISIS DE GANANCIA:\\n"
+            f"   Costo: ${costo:.2f}\\n"
+            f"   Precio de venta: ${precio_venta:.2f}\\n"
+            f"   Ganancia: ${ganancia:.2f}\\n"
+            f"   Margen: {margen:.1f}%")
+'''   
+
+# --- Simulación de Uso ---
+if __name__ == "__main__":
+    print("="*60)
+    print("🤯 DEMOSTRACIÓN: AGENTE CON CAPACIDAD DE AUTO-EXTENSIÓN")
+    print("="*60)
+    
+    # Crear el agente
+    agente = AgenteAutonomo("MegaBot")
+    
+    # Interacción 1: El agente solo tiene herramientas básicas
+    print("\n" + "="*60)
+    print("🟢 INTERACCIÓN 1: Consulta de habilidades iniciales")
+    print("="*60)
+    respuesta = agente.procesar("lista")
+    print(f"💬 Agente: {respuesta}")
+    
+    # Interacción 2: El usuario le pide que aprenda a hacer algo nuevo
+    print("\n" + "="*60)
+    print("🟡 INTERACCIÓN 2: El usuario pide auto-extensión")
+    print("="*60)
+    respuesta = agente.procesar("Oye, crea una herramienta calculadora que pueda sumar, restar, multiplicar y dividir.")
+    print(f"💬 Agente: {respuesta}")
+    
+    # Interacción 3: Verificar que la nueva habilidad se cargó
+    print("\n" + "="*60)
+    print("🔵 INTERACCIÓN 3: Verificar que la nueva habilidad existe")
+    print("="*60)
+    respuesta = agente.procesar("lista")
+    print(f"💬 Agente: {respuesta}")
+    
+    # Interacción 4: Crear otra herramienta
+    print("\n" + "="*60)
+    print("🟣 INTERACCIÓN 4: Crear otra herramienta")
+    print("="*60)
+    respuesta = agente.procesar("Crea una herramienta que me dé el clima falso de una ciudad.")
+    print(f"💬 Agente: {respuesta}")
+    
+    # Interacción 5: Lista final
+    print("\n" + "="*60)
+    print("🟤 INTERACCIÓN 5: Lista de habilidades final")
+    print("="*60)
+    respuesta = agente.procesar("lista")
+    print(f"💬 Agente: {respuesta}")
+    
+    print("\n" + "="*60)
+    print("🎉 FIN DE LA DEMOSTRACIÓN. Revisa la carpeta './habilidades' para ver los archivos creados.")
+    print("="*60)

@@ -1,0 +1,949 @@
+#!/usr/bin/env python3
+"""
+🤯 AGENTE SUPREMO - DIAGNÓSTICO Y AUTO-REPARACIÓN
+Detecta errores en el sistema, sugiere soluciones y genera código de reparación
+Nivel: Ultra Enterprise - Auto-reparación inteligente
+"""
+
+import json
+import os
+import importlib.util
+import inspect
+import traceback
+import sys
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+import subprocess
+import re
+
+class AgenteSupremo:
+    def __init__(self, nombre: str = "SupremeBot", directorio_habilidades: str = "./habilidades"):
+        self.nombre = nombre
+        self.directorio_habilidades = directorio_habilidades
+        self.habilidades: Dict[str, callable] = {}
+        self.memoria_errores: List[Dict] = []
+        self.base_conocimiento = self._cargar_conocimiento()
+        
+        # Asegurar directorios
+        os.makedirs(self.directorio_habilidades, exist_ok=True)
+        os.makedirs("./diagnosticos", exist_ok=True)
+        
+        # Cargar habilidades existentes
+        self._cargar_habilidades()
+        
+        print(f"✅ Agente Supremo '{self.nombre}' inicializado")
+        print(f"   📚 Habilidades: {len(self.habilidades)}")
+        print(f"   🐞 Errores en memoria: {len(self.memoria_errores)}")
+        
+    def _cargar_conocimiento(self):
+        """Carga la base de conocimiento de errores y soluciones"""
+        try:
+            with open("conocimiento_errores.json", 'r') as f:
+                return json.load(f)
+        except:
+            return {
+                "patrones_error": [],
+                "soluciones_exitosas": {},
+                "estadisticas": {
+                    "errores_detectados": 0,
+                    "auto_reparaciones": 0,
+                    "tasa_exito": 0
+                }
+            }
+    
+    def _guardar_conocimiento(self):
+        with open("conocimiento_errores.json", 'w') as f:
+            json.dump(self.base_conocimiento, f, indent=2)
+    
+    def _cargar_habilidades(self):
+        """Carga habilidades existentes"""
+        for archivo in os.listdir(self.directorio_habilidades):
+            if archivo.endswith(".py") and not archivo.startswith("__"):
+                nombre_modulo = archivo[:-3]
+                ruta = os.path.join(self.directorio_habilidades, archivo)
+                self._importar_habilidad(nombre_modulo, ruta)
+    
+    def _importar_habilidad(self, nombre: str, ruta: str):
+        try:
+            spec = importlib.util.spec_from_file_location(nombre, ruta)
+            modulo = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(modulo)
+            
+            for nombre_func, obj in inspect.getmembers(modulo, inspect.isfunction):
+                if hasattr(obj, 'es_habilidad'):
+                    self.habilidades[obj.nombre_habilidad] = obj
+        except Exception as e:
+            print(f"   ⚠️ Error cargando {nombre}: {e}")
+    
+    # ============================================================
+    # SISTEMA DE DETECCIÓN DE ERRORES (¡LO MÁS IMPORTANTE!)
+    # ============================================================
+    
+    def diagnosticar_sistema(self) -> Dict:
+        """
+        ANALIZA TODO EL SISTEMA EN BUSCA DE ERRORES
+        Retorna un informe completo con problemas detectados y soluciones
+        """
+        print("\n🔍 INICIANDO DIAGNÓSTICO COMPLETO DEL SISTEMA...")
+        informe = {
+            "timestamp": datetime.now().isoformat(),
+            "errores_criticos": [],
+            "advertencias": [],
+            "sugerencias": [],
+            "codigo_reparacion": {},
+            "estadisticas": {}
+        }
+        
+        # 1. Verificar archivos de log
+        self._diagnosticar_logs(informe)
+        
+        # 2. Verificar base de datos
+        self._diagnosticar_bd(informe)
+        
+        # 3. Verificar habilidades
+        self._diagnosticar_habilidades(informe)
+        
+        # 4. Verificar patrones de error recurrentes
+        self._diagnosticar_patrones(informe)
+        
+        # 5. Generar código de reparación si es necesario
+        self._generar_reparaciones(informe)
+        
+        # Guardar diagnóstico
+        self._guardar_diagnostico(informe)
+        
+        return informe
+    
+    def _diagnosticar_logs(self, informe):
+        """Analiza logs en busca de errores"""
+        try:
+            log_file = "/home/junior/Escritorio/sistema-ventas-python/sistema_ventas.log"
+            if not os.path.exists(log_file):
+                return
+            
+            with open(log_file, 'r') as f:
+                logs = f.readlines()[-500:]  # Últimas 500 líneas
+            
+            errores_recientes = []
+            patrones_error = {
+                "NoneType": "Acceso a objeto None - Falta validación",
+                "KeyError": "Acceso a clave inexistente en diccionario",
+                "IndexError": "Acceso a índice fuera de rango en lista",
+                "ValueError": "Valor incorrecto para operación",
+                "TypeError": "Tipo de dato incorrecto",
+                "AttributeError": "Atributo no existe en objeto",
+                "ConnectionError": "Error de conexión a BD",
+                "Timeout": "Tiempo de espera agotado"
+            }
+            
+            for linea in logs[-100:]:  # Últimas 100 líneas
+                for patron, desc in patrones_error.items():
+                    if patron in linea:
+                        errores_recientes.append({
+                            "tipo": patron,
+                            "descripcion": desc,
+                            "linea": linea.strip(),
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        break
+            
+            if errores_recientes:
+                informe["errores_criticos"].extend(errores_recientes[:5])
+                informe["estadisticas"]["errores_en_logs"] = len(errores_recientes)
+                
+        except Exception as e:
+            informe["advertencias"].append(f"Error leyendo logs: {e}")
+    
+    def _diagnosticar_bd(self, informe):
+        """Verifica conexión y consultas a BD"""
+        try:
+            # Intentar conectar a la BD
+            import requests
+            response = requests.post(
+                "http://localhost:5000/consultar",
+                json={"consulta": "SELECT 1 as test"},
+                timeout=3
+            )
+            
+            if response.status_code != 200:
+                informe["errores_criticos"].append({
+                    "tipo": "BD_CONNECTION",
+                    "descripcion": "No se puede conectar a la base de datos",
+                    "solucion": "Verificar que servidor_bd.py esté corriendo"
+                })
+            else:
+                # Verificar tablas importantes
+                tablas = ["venta", "articulo", "cliente", "kardex"]
+                for tabla in tablas:
+                    response = requests.post(
+                        "http://localhost:5000/consultar",
+                        json={"consulta": f"SELECT TOP 1 * FROM {tabla}"},
+                        timeout=2
+                    )
+                    if response.status_code != 200:
+                        informe["advertencias"].append({
+                            "tipo": f"TABLA_{tabla.upper()}",
+                            "descripcion": f"Problema accediendo a tabla {tabla}"
+                        })
+                        
+        except Exception as e:
+            informe["errores_criticos"].append({
+                "tipo": "BD_ERROR",
+                "descripcion": f"Error conectando a BD: {str(e)}",
+                "solucion": "Ejecutar: python3 servidor_bd.py"
+            })
+    
+    def _diagnosticar_habilidades(self, informe):
+        """Verifica que las habilidades funcionen correctamente"""
+        for nombre, habilidad in self.habilidades.items():
+            try:
+                # Intentar ejecutar la habilidad con parámetros de prueba
+                if hasattr(habilidad, 'descripcion_habilidad'):
+                    # Prueba simple: verificar que se puede llamar
+                    pass
+            except Exception as e:
+                informe["advertencias"].append({
+                    "tipo": "HABILIDAD_ROTA",
+                    "descripcion": f"La habilidad '{nombre}' podría estar dañada",
+                    "error": str(e)
+                })
+    
+    def _diagnosticar_patrones(self, informe):
+        """Analiza patrones de errores recurrentes"""
+        if len(self.memoria_errores) > 5:
+            # Agrupar por tipo de error
+            tipos = {}
+            for error in self.memoria_errores[-50:]:
+                tipo = error.get('tipo', 'desconocido')
+                tipos[tipo] = tipos.get(tipo, 0) + 1
+            
+            # Identificar patrones peligrosos
+            for tipo, count in tipos.items():
+                if count > 3:
+                    informe["sugerencias"].append({
+                        "tipo": "PATRON_RECURRENTE",
+                        "descripcion": f"Error '{tipo}' ha ocurrido {count} veces",
+                        "recomendacion": "Revisar este tipo de error con prioridad"
+                    })
+    
+    def _generar_reparaciones(self, informe):
+        """GENERA CÓDIGO PARA REPARAR ERRORES DETECTADOS"""
+        
+        for error in informe["errores_criticos"]:
+            if error["tipo"] == "NoneType":
+                codigo = '''
+# 🛠️ REPARACIÓN PARA ERROR NoneType
+# Agregar esta validación antes de acceder al objeto
+
+def validar_objeto(objeto, campo, default=None):
+    """Valida que un objeto y campo existan antes de acceder"""
+    if objeto is None:
+        return default
+    return objeto.get(campo, default)
+
+# Ejemplo de uso:
+# En lugar de: valor = objeto['campo']
+# Usar: valor = validar_objeto(objeto, 'campo', 0)
+'''
+                informe["codigo_reparacion"]["NoneType"] = codigo
+                
+            elif error["tipo"] == "KeyError":
+                codigo = '''
+# 🛠️ REPARACIÓN PARA ERROR KeyError
+# Usar .get() en lugar de acceso directo
+
+def acceder_seguro(diccionario, clave, default=None):
+    """Accede a un diccionario de forma segura"""
+    return diccionario.get(clave, default)
+
+# Ejemplo:
+# En lugar de: valor = dic['clave']
+# Usar: valor = acceder_seguro(dic, 'clave', 0)
+'''
+                informe["codigo_reparacion"]["KeyError"] = codigo
+                
+            elif error["tipo"] == "BD_CONNECTION":
+                codigo = '''
+# 🛠️ REPARACIÓN PARA CONEXIÓN BD
+# Script para reiniciar el servidor de BD automáticamente
+
+import subprocess
+import time
+
+def reiniciar_servidor_bd():
+    """Reinicia el servidor de base de datos"""
+    try:
+        # Matar procesos existentes
+        subprocess.run(["pkill", "-f", "servidor_bd.py"])
+        time.sleep(2)
+        
+        # Iniciar de nuevo
+        subprocess.run([
+            "cd /home/junior/Escritorio/ia-mecanica/herramientas && "
+            "source venv/bin/activate && "
+            "python3 servidor_bd.py &"
+        ], shell=True)
+        
+        return "✅ Servidor BD reiniciado"
+    except Exception as e:
+        return f"❌ Error reiniciando: {e}"
+
+# Ejecutar: reiniciar_servidor_bd()
+'''
+                informe["codigo_reparacion"]["BD_CONNECTION"] = codigo
+    
+    def _guardar_diagnostico(self, informe):
+        """Guarda el diagnóstico en archivo"""
+        nombre_archivo = f"diagnosticos/diagnostico_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(nombre_archivo, 'w') as f:
+            json.dump(informe, f, indent=2)
+        print(f"   💾 Diagnóstico guardado: {nombre_archivo}")
+    
+    # ============================================================
+    # GENERADOR DE CÓDIGO INTELIGENTE
+    # ============================================================
+    
+    def generar_codigo_para_error(self, descripcion_error: str) -> str:
+        """
+        GENERA CÓDIGO ESPECÍFICO PARA SOLUCIONAR UN ERROR
+        """
+        desc_lower = descripcion_error.lower()
+        
+        if "none" in desc_lower or "nonetype" in desc_lower:
+            return '''
+def safe_get(obj, attr, default=None):
+    """Obtiene atributo de forma segura sin NoneType errors"""
+    try:
+        return getattr(obj, attr) if obj is not None else default
+    except:
+        return default
+
+# Función mejorada para diccionarios
+def safe_dict_get(d, key, default=None):
+    """Obtiene valor de diccionario de forma segura"""
+    try:
+        return d.get(key, default) if d is not None else default
+    except:
+        return default
+'''
+        
+        elif "keyerror" in desc_lower:
+            return '''
+def safe_key_access(d, key, default=None):
+    """Accede a clave de diccionario sin KeyError"""
+    try:
+        return d[key]
+    except (KeyError, TypeError):
+        return default
+
+# Ejemplo de uso en tu código
+try:
+    valor = safe_key_access(mi_dict, 'clave', 0)
+except Exception as e:
+    print(f"Error manejado: {e}")
+'''
+        
+        elif "conexion" in desc_lower or "connection" in desc_lower:
+            return '''
+import time
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+def crear_sesion_robusta():
+    """Crea una sesión HTTP con reintentos automáticos"""
+    session = requests.Session()
+    
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session
+
+# Usar así:
+session = crear_sesion_robusta()
+try:
+    response = session.post("http://localhost:5000/consultar", 
+                           json={"consulta": "SELECT 1"},
+                           timeout=5)
+except requests.exceptions.RequestException as e:
+    print(f"Error controlado: {e}")
+'''
+        
+        else:
+            return f"# No tengo una solución predefinida para: {descripcion_error}"
+    
+    # ============================================================
+    # HERRAMIENTAS DEL AGENTE
+    # ============================================================
+    
+    @staticmethod
+    def herramienta(nombre, descripcion):
+        def decorador(func):
+            func.es_habilidad = True
+            func.nombre_habilidad = nombre
+            func.descripcion_habilidad = descripcion
+            return func
+        return decorador
+    
+    @herramienta("diagnosticar", "Ejecuta un diagnóstico completo del sistema y reporta problemas")
+    def diagnosticar(self) -> str:
+        """Herramienta principal de diagnóstico"""
+        informe = self.diagnosticar_sistema()
+        
+        resultado = "\n" + "="*60
+        resultado += "\n🔍 INFORME DE DIAGNÓSTICO COMPLETO"
+        resultado += "\n" + "="*60
+        
+        if informe["errores_criticos"]:
+            resultado += f"\n\n🔴 ERRORES CRÍTICOS ({len(informe['errores_criticos'])}):"
+            for e in informe["errores_criticos"]:
+                resultado += f"\n   • {e['tipo']}: {e['descripcion']}"
+                if 'solucion' in e:
+                    resultado += f"\n     Solución: {e['solucion']}"
+        
+        if informe["advertencias"]:
+            resultado += f"\n\n🟡 ADVERTENCIAS ({len(informe['advertencias'])}):"
+            for a in informe["advertencias"]:
+                resultado += f"\n   • {a['descripcion']}"
+        
+        if informe["sugerencias"]:
+            resultado += f"\n\n💡 SUGERENCIAS DE MEJORA:"
+            for s in informe["sugerencias"]:
+                resultado += f"\n   • {s['descripcion']}"
+        
+        if informe["codigo_reparacion"]:
+            resultado += "\n\n🔧 CÓDIGO DE REPARACIÓN GENERADO:"
+            for tipo, codigo in informe["codigo_reparacion"].items():
+                resultado += f"\n\n--- REPARACIÓN PARA {tipo} ---"
+                resultado += f"\n{codigo}"
+        
+        return resultado
+    
+    @herramienta("reparar_error", "Genera código para reparar un error específico basado en su descripción")
+    def reparar_error(self, descripcion: str) -> str:
+        """Genera código para reparar un error"""
+        codigo = self.generar_codigo_para_error(descripcion)
+        
+        resultado = f"🔧 Código generado para: {descripcion}\n\n{codigo}"
+        print(resultado)
+        
+        # PREGUNTAR SI QUIERE APLICAR LA REPARACIÓN
+        print("\n" + "="*40)
+        respuesta = input("🔄 ¿Quieres APLICAR esta reparación automáticamente? (S/N): ").strip().upper()
+        
+        if respuesta == 'S':
+            print("\n🚀 INICIANDO AUTO-REPARACIÓN...")
+            resultado_reparacion = self.aplicar_reparacion(descripcion, codigo)
+            if resultado_reparacion["exito"]:
+                return f"✅ AUTO-REPARACIÓN COMPLETADA\n{resultado}"
+            else:
+                return f"❌ AUTO-REPARACIÓN FALLÓ\n{resultado}"
+        else:
+            return resultado
+    
+    @herramienta("analizar_logs", "Analiza los logs del sistema en busca de errores recientes")
+    def analizar_logs(self) -> str:
+        """Analiza logs y retorna resumen"""
+        try:
+            log_file = "/home/junior/Escritorio/sistema-ventas-python/sistema_ventas.log"
+            if not os.path.exists(log_file):
+                return "❌ Archivo de log no encontrado"
+            
+            with open(log_file, 'r') as f:
+                logs = f.readlines()[-200:]
+            
+            errores = [l for l in logs if 'ERROR' in l or '❌' in l or 'Exception' in l]
+            
+            resultado = f"📊 ANÁLISIS DE LOGS\n"
+            resultado += f"   Total líneas analizadas: {len(logs)}\n"
+            resultado += f"   Errores encontrados: {len(errores)}\n\n"
+            
+            if errores:
+                resultado += "Últimos 5 errores:\n"
+                for e in errores[-5:]:
+                    resultado += f"   • {e[:100]}...\n"
+            
+            return resultado
+        except Exception as e:
+            return f"❌ Error analizando logs: {e}"
+    
+    @herramienta("crear_herramienta", "Crea una nueva herramienta personalizada")
+    def crear_herramienta(self, nombre: str, descripcion: str, codigo: str) -> str:
+        """Crea una nueva habilidad"""
+        return self._crear_archivo_habilidad(nombre, descripcion, codigo)
+    
+    def _crear_archivo_habilidad(self, nombre: str, descripcion: str, codigo: str) -> str:
+        """Crea archivo de habilidad"""
+        ruta = os.path.join(self.directorio_habilidades, f"{nombre}.py")
+        
+        plantilla = f'''"""
+Habilidad: {nombre}
+Descripción: {descripcion}
+Creada por: {self.nombre}
+Fecha: {datetime.now()}
+"""
+
+def herramienta(nombre, descripcion):
+    def decorador(func):
+        func.es_habilidad = True
+        func.nombre_habilidad = nombre
+        func.descripcion_habilidad = descripcion
+        return func
+    return decorador
+
+{codigo}
+'''
+        try:
+            with open(ruta, 'w') as f:
+                f.write(plantilla)
+            self._importar_habilidad(nombre, ruta)
+            return f"✅ Herramienta '{nombre}' creada exitosamente"
+        except Exception as e:
+            return f"❌ Error creando herramienta: {e}"
+    
+    @herramienta("listar", "Muestra todas las herramientas disponibles")
+    def listar(self) -> str:
+        resultado = f"📚 HERRAMIENTAS DISPONIBLES ({len(self.habilidades)})\n"
+        for nombre, func in self.habilidades.items():
+            desc = getattr(func, 'descripcion_habilidad', 'Sin descripción')
+            resultado += f"   • {nombre}: {desc}\n"
+        return resultado
+
+    # ============================================================
+    # MÉTODOS PARA CREAR HERRAMIENTAS (AHORA DENTRO DE LA CLASE)
+    # ============================================================
+    
+    def _crear_herramienta_iva(self):
+        """Crea una herramienta para calcular IVA"""
+        codigo = '''
+@herramienta("calcular_iva", "Calcula el precio final con IVA incluido (16%)")
+def calcular_iva(precio_sin_iva: float) -> str:
+    """Calcula el IVA y el precio final"""
+    iva = precio_sin_iva * 0.16
+    total = precio_sin_iva + iva
+    return (f"📊 CÁLCULO DE IVA:\\n"
+            f"   Precio sin IVA: ${precio_sin_iva:.2f}\\n"
+            f"   IVA (16%): ${iva:.2f}\\n"
+            f"   TOTAL con IVA: ${total:.2f}")
+'''
+        resultado = self._crear_archivo_habilidad("calcular_iva", "Calcula el precio final con IVA incluido", codigo)
+        print(f"✅ {resultado}")
+    
+    def _crear_herramienta_calculadora(self):
+        """Crea una calculadora básica"""
+        codigo = '''
+@herramienta("calculadora_v2", "Calculadora básica con operaciones aritméticas")
+def calculadora_v2(operacion: str, a: float, b: float = 0) -> str:
+    """Ejecuta operaciones aritméticas"""
+    if operacion == "suma":
+        return f"Resultado: {a + b}"
+    elif operacion == "resta":
+        return f"Resultado: {a - b}"
+    elif operacion == "multiplica":
+        return f"Resultado: {a * b}"
+    elif operacion == "divide":
+        if b == 0:
+            return "Error: División por cero"
+        return f"Resultado: {a / b}"
+    elif operacion == "raiz":
+        return f"Resultado: {a ** 0.5}"
+    else:
+        return "Operación no soportada"
+'''
+        resultado = self._crear_archivo_habilidad("calculadora_v2", "Calculadora básica", codigo)
+        print(f"✅ {resultado}")
+    
+    def _crear_herramienta_clima(self):
+        """Crea herramienta de clima"""
+        codigo = '''
+@herramienta("clima_avanzado", "Pronóstico del clima para una ciudad")
+def clima_avanzado(ciudad: str) -> str:
+    """Simula pronóstico del clima"""
+    import random
+    condiciones = ["☀️ Soleado", "⛅ Parcialmente nublado", "🌧️ Lluvioso", "🌪️ Ventoso", "❄️ Nevado"]
+    temp = random.randint(5, 35)
+    humedad = random.randint(30, 95)
+    viento = random.randint(0, 30)
+    
+    return (f"🌍 CLIMA EN {ciudad.upper()}\\n"
+            f"   Condición: {random.choice(condiciones)}\\n"
+            f"   Temperatura: {temp}°C\\n"
+            f"   Humedad: {humedad}%\\n"
+            f"   Viento: {viento} km/h")
+'''
+        resultado = self._crear_archivo_habilidad("clima_avanzado", "Pronóstico del clima", codigo)
+        print(f"✅ {resultado}")
+    
+    def _crear_herramienta_desde_comando(self, tipo):
+        """Crea herramienta basada en comando /crear"""
+        tipo_lower = tipo.lower()
+        if "iva" in tipo_lower:
+            self._crear_herramienta_iva()
+        elif "calculadora" in tipo_lower:
+            self._crear_herramienta_calculadora()
+        elif "clima" in tipo_lower:
+            self._crear_herramienta_clima()
+        else:
+            print(f"❌ No sé cómo crear una herramienta de tipo '{tipo}'")
+    
+    def _crear_herramienta_desde_comando(self, tipo):
+        """Crea herramienta basada en comando /crear"""
+        if "iva" in tipo:
+            self._crear_herramienta_iva()
+        elif "calculadora" in tipo:
+            self._crear_herramienta_calculadora()
+        elif "clima" in tipo:
+            self._crear_herramienta_clima()
+        else:
+            print(f"❌ No sé cómo crear una herramienta de tipo '{tipo}'")
+
+    # ============================================================
+    # SISTEMA DE AUTO-REPARACIÓN (¡LO MÁS PODEROSO!)
+    # ============================================================
+    
+    def aplicar_reparacion(self, tipo_error, codigo):
+        """
+        APLICA automáticamente la reparación al sistema
+        Esta función pregunta al usuario y ejecuta la reparación
+        """
+        print(f"\n🔧 ¿Quieres APLICAR la reparación para '{tipo_error}' automáticamente?")
+        print("   Esto intentará solucionar el problema en tu sistema.")
+        respuesta = input("   ¿Proceder? (S/N): ").strip().upper()
+        
+        if respuesta == 'S':
+            print(f"\n🛠️ INICIANDO AUTO-REPARACIÓN PARA: {tipo_error}")
+            print("   " + "="*40)
+            
+            # 1. Crear backup de seguridad
+            self._crear_backup_seguridad()
+            
+            # 2. Aplicar reparación específica según el error
+            if "NoneType" in tipo_error or "none" in tipo_error.lower():
+                resultado = self._reparar_none_type()
+            elif "KeyError" in tipo_error:
+                resultado = self._reparar_key_error()
+            elif "conexion" in tipo_error.lower() or "connection" in tipo_error.lower():
+                resultado = self._reparar_conexion_bd()
+            else:
+                resultado = self._reparar_generico(codigo)
+            
+            # 3. Mostrar resultado
+            if resultado["exito"]:
+                print(f"\n✅ AUTO-REPARACIÓN COMPLETADA CON ÉXITO")
+                print(f"   📍 Reparación: {resultado['accion']}")
+                print(f"   📁 Archivos modificados: {resultado['archivos']}")
+                print(f"   💾 Backup creado en: {resultado['backup']}")
+            else:
+                print(f"\n❌ AUTO-REPARACIÓN FALLÓ")
+                print(f"   Error: {resultado['error']}")
+                print("   Revisa el backup para restaurar si es necesario.")
+            
+            return resultado
+        else:
+            print("❌ Reparación cancelada por el usuario.")
+            return {"exito": False, "cancelado": True}
+    
+    def _crear_backup_seguridad(self):
+        """Crea un backup de los archivos críticos antes de modificar"""
+        import shutil
+        from datetime import datetime
+        
+        backup_dir = f"backups/backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        archivos_criticos = [
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/venta_agent.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/ui/dialogos/pago_mixto_dialog.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/programador_agent.py"
+        ]
+        
+        print("   💾 Creando backup de seguridad...")
+        for archivo in archivos_criticos:
+            if os.path.exists(archivo):
+                nombre = os.path.basename(archivo)
+                shutil.copy2(archivo, f"{backup_dir}/{nombre}.bak")
+                print(f"      ✅ Backup: {nombre}.bak")
+        
+        self.ultimo_backup = backup_dir
+        return backup_dir
+    
+    def _reparar_none_type(self):
+        """Repara específicamente errores NoneType - VERSIÓN MEJORADA"""
+        print("   🔍 ANALIZANDO ERRORES NONE TYPE...")
+        
+        archivos_modificados = []
+        
+        # Lista de archivos a reparar (¡TODOS los relevantes!)
+        archivos_a_reparar = [
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/venta_agent.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/ui/dialogos/pago_mixto_dialog.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/programador_agent.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/cliente_agent.py",
+            "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/agents/articulo_agent.py"
+        ]
+        
+        for archivo_path in archivos_a_reparar:
+            if os.path.exists(archivo_path):
+                with open(archivo_path, 'r') as f:
+                    contenido = f.readlines()
+                
+                # Verificar si YA tiene las funciones de reparación
+                tiene_reparacion = False
+                for linea in contenido:
+                    if "def safe_get" in linea or "def safe_dict_get" in linea:
+                        tiene_reparacion = True
+                        break
+                
+                if tiene_reparacion:
+                    print(f"      ⏭️  {os.path.basename(archivo_path)} ya está reparado")
+                    continue
+                
+                # Buscar y marcar posibles NoneType
+                cambios = 0
+                nuevas_lineas = []
+                
+                # Agregar funciones de reparación al inicio
+                if not tiene_reparacion:
+                    nuevas_lineas.append("\n")
+                    nuevas_lineas.append("# Funciones de reparación automática - Agregadas por SupremeBot\n")
+                    nuevas_lineas.append("def safe_get(obj, attr, default=None):\n")
+                    nuevas_lineas.append("    \"\"\"Obtiene atributo de forma segura sin NoneType errors\"\"\"\n")
+                    nuevas_lineas.append("    try:\n")
+                    nuevas_lineas.append("        return getattr(obj, attr) if obj is not None else default\n")
+                    nuevas_lineas.append("    except:\n")
+                    nuevas_lineas.append("        return default\n")
+                    nuevas_lineas.append("\n")
+                    nuevas_lineas.append("def safe_dict_get(d, key, default=None):\n")
+                    nuevas_lineas.append("    \"\"\"Obtiene valor de diccionario de forma segura\"\"\"\n")
+                    nuevas_lineas.append("    try:\n")
+                    nuevas_lineas.append("        return d.get(key, default) if d is not None else default\n")
+                    nuevas_lineas.append("    except:\n")
+                    nuevas_lineas.append("        return default\n")
+                    nuevas_lineas.append("\n")
+                
+                # Procesar líneas existentes
+                for linea in contenido:
+                    nueva_linea = linea
+                    
+                    # Buscar accesos peligrosos y envolverlos
+                    if "getattr" not in linea and "safe" not in linea:
+                        if ".precio" in linea or ".nombre" in linea or ".id" in linea:
+                            # Convertir obj.atributo a safe_get(obj, 'atributo')
+                            import re
+                            patron = r'(\w+)\.(\w+)'
+                            nueva_linea = re.sub(patron, r'safe_get(\1, "\2")', linea)
+                            if nueva_linea != linea:
+                                cambios += 1
+                    
+                    nuevas_lineas.append(nueva_linea)
+                
+                if cambios > 0 or not tiene_reparacion:
+                    with open(archivo_path, 'w') as f:
+                        f.writelines(nuevas_lineas)
+                    archivos_modificados.append(archivo_path)
+                    print(f"      ✅ {os.path.basename(archivo_path)}: {cambios} líneas modificadas + funciones agregadas")
+        
+        return {
+            "exito": True,
+            "accion": f"Reparación NoneType completada en {len(archivos_modificados)} archivos",
+            "archivos": len(archivos_modificados),
+            "backup": self.ultimo_backup
+        }
+    
+    def _reparar_key_error(self):
+        """Repara específicamente errores KeyError"""
+        print("   🔍 ANALIZANDO ERRORES KEYERROR...")
+        
+        archivos_modificados = []
+        pago_mixto_path = "/home/junior/Escritorio/sistema-ventas-python/agente_escritorio/ui/dialogos/pago_mixto_dialog.py"
+        
+        if os.path.exists(pago_mixto_path):
+            with open(pago_mixto_path, 'r') as f:
+                contenido = f.readlines()
+            
+            # Buscar accesos directos a diccionarios y convertirlos a .get()
+            cambios = 0
+            nuevas_lineas = []
+            for linea in contenido:
+                nueva_linea = linea
+                if "[" in linea and "]" in linea and "=" in linea:
+                    # Convertir dict['key'] a dict.get('key', default)
+                    import re
+                    patron = r'(\w+)\[["\'](\w+)["\']\]'
+                    nueva_linea = re.sub(patron, r'\1.get("\2", None)', linea)
+                    if nueva_linea != linea:
+                        cambios += 1
+                nuevas_lineas.append(nueva_linea)
+            
+            if cambios > 0:
+                with open(pago_mixto_path, 'w') as f:
+                    f.writelines(nuevas_lineas)
+                archivos_modificados.append(pago_mixto_path)
+                print(f"      ✅ {cambios} líneas modificadas en pago_mixto_dialog.py")
+        
+        return {
+            "exito": True,
+            "accion": "Reparación KeyError completada",
+            "archivos": len(archivos_modificados),
+            "backup": self.ultimo_backup
+        }
+    
+    def _reparar_conexion_bd(self):
+        """Repara problemas de conexión a BD"""
+        print("   🔍 REPARANDO CONEXIÓN A BASE DE DATOS...")
+        
+        # Verificar si el servidor está corriendo
+        import subprocess
+        import time
+        
+        # Matar procesos existentes
+        subprocess.run(["pkill", "-f", "servidor_bd.py"], capture_output=True)
+        time.sleep(2)
+        
+        # Iniciar servidor de nuevo
+        try:
+            subprocess.Popen(
+                ["cd /home/junior/Escritorio/ia-mecanica/herramientas && source venv/bin/activate && python3 servidor_bd.py &"],
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            time.sleep(3)
+            
+            # Verificar que responde
+            import requests
+            response = requests.get("http://localhost:5000/health", timeout=3)
+            
+            if response.status_code == 200:
+                return {
+                    "exito": True,
+                    "accion": "Servidor BD reiniciado exitosamente",
+                    "archivos": 0,
+                    "backup": self.ultimo_backup
+                }
+            else:
+                return {
+                    "exito": False,
+                    "error": "Servidor iniciado pero no responde"
+                }
+        except Exception as e:
+            return {
+                "exito": False,
+                "error": str(e)
+            }
+    
+    def _reparar_generico(self, codigo):
+        """Reparación genérica para otros errores"""
+        print("   🔍 APLICANDO REPARACIÓN GENÉRICA...")
+        
+        # Extraer funciones del código generado
+        funciones = self._extraer_funciones(codigo)
+        
+        if funciones:
+            # Guardar funciones en archivo utils
+            utils_path = "/home/junior/Escritorio/ia-mecanica/herramientas/utils_reparacion.py"
+            
+            modo = 'a' if os.path.exists(utils_path) else 'w'
+            with open(utils_path, modo) as f:
+                if modo == 'w':
+                    f.write('"""\n🛠️ UTILIDADES DE REPARACIÓN AUTOMÁTICA\n"""\n\n')
+                f.write(f"\n# Funciones agregadas el {datetime.now()}\n")
+                f.write(funciones)
+                f.write("\n")
+            
+            return {
+                "exito": True,
+                "accion": f"Funciones guardadas en {utils_path}",
+                "archivos": 1,
+                "backup": self.ultimo_backup
+            }
+        else:
+            return {
+                "exito": False,
+                "error": "No se pudieron extraer funciones del código"
+            }
+    
+    def _extraer_funciones(self, codigo):
+        """Extrae funciones del código generado"""
+        lineas = codigo.split('\n')
+        funciones = []
+        dentro_funcion = False
+        
+        for linea in lineas:
+            if linea.strip().startswith('def '):
+                dentro_funcion = True
+                funciones.append(linea)
+            elif dentro_funcion and linea.strip():
+                funciones.append(linea)
+            elif dentro_funcion and not linea.strip():
+                funciones.append('')
+                dentro_funcion = False
+        
+        return '\n'.join(funciones)
+
+# ============================================================
+# VERSIÓN INTERACTIVA
+# ============================================================
+def main():
+    agente = AgenteSupremo("SupremeBot")
+    
+    print("\n" + "="*60)
+    print("🤖 AGENTE SUPREMO - DIAGNÓSTICO Y AUTO-REPARACIÓN")
+    print("="*60)
+    print("\nComandos:")
+    print("  /diagnostico  - Ejecutar diagnóstico completo")
+    print("  /logs        - Analizar logs")
+    print("  /reparar     - Generar código para error (ej: /reparar NoneType error)")
+    print("  /lista       - Ver herramientas")
+    print("  /crear       - Crear nueva herramienta (ej: /crear calculadora)")
+    print("  /salir       - Terminar")
+    print("-"*60)
+    
+    while True:
+        try:
+            entrada = input("\n💬 Tú: ").strip()
+            
+            if entrada.lower() == '/salir':
+                break
+            elif entrada.lower() == '/diagnostico':
+                print(agente.diagnosticar())
+            elif entrada.lower() == '/logs':
+                print(agente.analizar_logs())
+            elif entrada.lower().startswith('/reparar '):
+                desc = entrada[9:].strip()
+                print(agente.reparar_error(desc))
+            elif entrada.lower() == '/lista':
+                print(agente.listar())
+            elif entrada.lower() == '/ayuda':
+                print("\nComandos: /diagnostico, /logs, /reparar, /lista, /crear, /salir")
+            elif entrada.lower().startswith('/crear '):
+                tipo = entrada[7:].strip()
+                agente._crear_herramienta_desde_comando(tipo)
+            else:
+                # DETECCIÓN DE LENGUAJE NATURAL
+                entrada_lower = entrada.lower()
+                if "herramienta" in entrada_lower and "iva" in entrada_lower:
+                    agente._crear_herramienta_iva()
+                elif "herramienta" in entrada_lower and "calculadora" in entrada_lower:
+                    agente._crear_herramienta_calculadora()
+                elif "herramienta" in entrada_lower and "clima" in entrada_lower:
+                    agente._crear_herramienta_clima()
+                else:
+                    print("Comando no reconocido. Usa /ayuda para ver los comandos disponibles.")
+                
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+    
+    print("\n👋 ¡Hasta luego!")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,16 @@
+{
+  "telegram": {
+    "enabled": false,
+    "bot_token": "TU_BOT_TOKEN_AQUI",
+    "chat_id": "TU_CHAT_ID_AQUI"
+  },
+  "whatsapp": {
+    "enabled": false,
+    "api_url": "https://api.whatsapp.com/send",
+    "phone_number": "TU_NUMERO_AQUI"
+  },
+  "webhook": {
+    "enabled": false,
+    "url": "https://tu-servidor.com/webhook"
+  }
+}
